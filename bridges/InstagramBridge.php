@@ -74,7 +74,7 @@ class InstagramBridge extends BridgeAbstract {
 	}
 
 	protected function getContents($uri) {
-		require_once('../minecookies.php');
+		require_once('minecookies.php');
 		$headers = $myInstagramHeaders;
 		return getContents($uri, $headers);
 	}
