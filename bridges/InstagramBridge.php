@@ -70,7 +70,10 @@ class InstagramBridge extends BridgeAbstract {
 
 	public function getCacheTimeout() {
 		$customTimeout = $this->getOption('cache_timeout');
-		return $customTimeout || parent::getCacheTimeout();
+		if ($customTimeout) {
+			return $customTimeout;
+		}
+		return parent::getCacheTimeout();
 	}
 
 	protected function getContents($uri) {
@@ -84,7 +87,7 @@ class InstagramBridge extends BridgeAbstract {
 		if(is_numeric($username)) return $username;
 
 		$cacheFac = new CacheFactory();
-		$cacheFac->setWorkingDir(PATH_LIB_CACHES);
+
 		$cache = $cacheFac->create(Configuration::getConfig('cache', 'type'));
 		$cache->setScope(get_called_class());
 		$cache->setKey(array($username));
