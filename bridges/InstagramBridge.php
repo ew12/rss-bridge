@@ -77,14 +77,15 @@ class InstagramBridge extends BridgeAbstract {
 	}
 
 	protected function getContents($uri) {
-/*		require 'minecookies.php';
+		require 'minecookies.php';
 		$headers = $myInstagramHeaders;
-*/
+/*
 		$headers = array();
 		$sessionId = $this->getOption('session_id');
 		if ($sessionId) {
 			$headers[] = 'cookie: sessionid=' . $sessionId;
 		}
+*/
 		return getContents($uri, $headers);
 	}
 
