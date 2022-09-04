@@ -18,6 +18,21 @@ final class Json
     }
 }
 
+/**
+ * Returns e.g. 'https://example.com/' or 'https://example.com/bridge/'
+ */
+function get_home_page_url(): string
+{
+    $https = $_SERVER['HTTPS'] ?? null;
+    $host = $_SERVER['HTTP_HOST'] ?? null;
+    $uri = $_SERVER['REQUEST_URI'] ?? null;
+    if (($pos = strpos($uri, '?')) !== false) {
+        $uri = substr($uri, 0, $pos);
+    }
+    $scheme = $https === 'on' ? 'https' : 'http';
+    return "$scheme://$host$uri";
+}
+
 function create_sane_stacktrace(\Throwable $e): array
 {
     $frames = array_reverse($e->getTrace());
@@ -120,4 +135,19 @@ function parse_mime_type($url)
     }
 
     return 'application/octet-stream';
+}
+
+/**
+ * https://stackoverflow.com/a/2510459
+ */
+function format_bytes(int $bytes, $precision = 2)
+{
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    $bytes /= pow(1024, $pow);
+
+    return round($bytes, $precision) . ' ' . $units[$pow];
 }

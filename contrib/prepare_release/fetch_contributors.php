@@ -2,9 +2,7 @@
 
 /* Generate the "Contributors" list for README.md automatically utilizing the GitHub API */
 
-require __DIR__ . '/../../lib/rssbridge.php';
-
-Configuration::loadConfiguration();
+require __DIR__ . '/../../lib/bootstrap.php';
 
 $url = 'https://api.github.com/repos/rss-bridge/rss-bridge/contributors';
 $contributors = [];
