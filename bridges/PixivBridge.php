@@ -129,10 +129,16 @@ class PixivBridge extends BridgeAbstract
         return $json;
     }
 
+    protected function getContents($uri)
+    {
+        require 'minecookies.php';
+        $headers = $myPixivHeaders;
+        return getContents($uri, $headers);
+    }    
+    
     private function collectWorksArray()
     {
-        require('minecookies.php');
-        $content = getContents($this->getSearchURI($this->getInput('mode')), $myPixivHeaders);
+        $content = getContents($this->getSearchURI($this->getInput('mode')));
         $content = json_decode($content, true);
         if ($this->getInput('mode') == 'all') {
             $total = [];
