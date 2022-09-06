@@ -138,7 +138,7 @@ class PixivBridge extends BridgeAbstract
     
     private function collectWorksArray()
     {
-        $content = getContents($this->getSearchURI($this->getInput('mode')));
+        $content = $this->getContents($this->getSearchURI($this->getInput('mode')));
         $content = json_decode($content, true);
         if ($this->getInput('mode') == 'all') {
             $total = [];
