@@ -11,7 +11,7 @@ class SyfywireBridge extends BridgeAbstract {
 		foreach ( $html->find ( '.card-feed article' ) as $article ) {
 			$item = [];
 			if ( $article->hasClass ( 'promo' ) === false ) {
-				$item['enclosures'] = array ( self::uri.$article->find('img', 0)->getAttribute('src') );
+				$item['enclosures'] = array ( self::URI.$article->find('img', 0)->getAttribute('src') );
 				$item['uri'] = $article->find ( 'a', 0 ) ->href;
 				$item['title'] = $article->find ( 'h2.headline', 0 )->innertext();
 				$item['timestamp'] = $article->find( '.date', 0 )->getAttribute ( 'datetime' );
