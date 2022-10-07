@@ -7,7 +7,7 @@ RSS-Bridge is a PHP project capable of generating RSS and Atom feeds for website
 [![LICENSE](https://img.shields.io/badge/license-UNLICENSE-blue.svg)](UNLICENSE)
 [![GitHub release](https://img.shields.io/github/release/rss-bridge/rss-bridge.svg?logo=github)](https://github.com/rss-bridge/rss-bridge/releases/latest)
 [![irc.libera.chat](https://img.shields.io/badge/irc.libera.chat-%23rssbridge-blue.svg)](https://web.libera.chat/#rssbridge)
-[![Chat on Matrix](https://matrix.to/img/matrix-badge.svg)](https://matrix.to/#/#rssbridge:libera.chat)
+[![Chat on Matrix](https://matrix.to/images-nohash/matrix-badge.svg)](https://matrix.to/#/#rssbridge:libera.chat)
 [![Actions Status](https://img.shields.io/github/workflow/status/RSS-Bridge/rss-bridge/Tests/master?label=GitHub%20Actions&logo=github)](https://github.com/RSS-Bridge/rss-bridge/actions)
 
 Screenshot of the Twitter bridge configuration:
@@ -101,28 +101,53 @@ modify the `repository` in `scalingo.json`. See https://github.com/RSS-Bridge/rs
 Learn more in
 [Installation](https://rss-bridge.github.io/rss-bridge/For_Hosts/Installation.html).
 
-### Create a bridge
+### Create a new bridge from scratch
 
-Create the new bridge in e.g. `bridges/ExecuteBridge.php`:
+Create the new bridge in e.g. `bridges/BearBlogBridge.php`:
 
 ```php
 <?php
 
-class ExecuteBridge extends BridgeAbstract
+class BearBlogBridge extends BridgeAbstract
 {
-    const NAME = 'Execute Program Blog';
+    const NAME = 'BearBlog (bearblog.dev)';
 
     public function collectData()
     {
-        $url = 'https://www.executeprogram.com/api/pages/blog';
-        $data = json_decode(getContents($url));
+        // We can perform css selectors on $dom
+        $dom = getSimpleHTMLDOM('https://herman.bearblog.dev/blog/');
 
-        foreach ($data->posts as $post) {
-            $this->items[] = [
-                'uri'       => sprintf('https://www.executeprogram.com/blog/%s', $post->slug),
-                'title'     => $post->title,
-                'content'   => $post->body,
+        // An array of dom nodes
+        $blogPosts = $dom->find('.blog-posts li');
+
+        foreach ($blogPosts as $blogPost) {
+            // Select the anchor at index 0 (the first anchor found)
+            $a = $blogPost->find('a', 0);
+
+            // Select the inner text of the anchor
+            $title = $a->innertext;
+
+            // Select the href attribute of the anchor
+            $url = $a->href;
+
+            // Select the <time> tag
+            $time = $blogPost->find('time', 0);
+            // Create a \DateTime object from the datetime attribute
+            $createdAt = date_create_from_format('Y-m-d', $time->datetime);
+
+            $item = [
+                'title' => $title,
+                'author' => 'Herman',
+
+                // Prepend the url because $url is a relative path
+                'uri' => 'https://herman.bearblog.dev' . $url,
+
+                // Grab the unix timestamp
+                'timestamp' => $createdAt->getTimestamp(),
             ];
+
+            // Add the item to the list of items
+            $this->items[] = $item;
         }
     }
 }
