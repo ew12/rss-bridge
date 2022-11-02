@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 final class Logger
 {
+    public static function debug(string $message, array $context = [])
+    {
+        if (Debug::isEnabled()) {
+            self::log('DEBUG', $message, $context);
+        }
+    }
+
     public static function info(string $message, array $context = []): void
     {
         self::log('INFO', $message, $context);
@@ -22,23 +29,31 @@ final class Logger
     private static function log(string $level, string $message, array $context = []): void
     {
         if (isset($context['e'])) {
-            $context['message'] = create_sane_exception_message($context['e']);
-            $context['file'] = trim_path_prefix($context['e']->getFile());
-            $context['line'] = $context['e']->getLine();
-            $context['code'] = $context['e']->getCode();
-            $context['url'] = get_current_url();
-            $context['trace'] = create_sane_stacktrace($context['e']);
+            /** @var \Throwable $e */
+            $e = $context['e'];
             unset($context['e']);
+            $context['type'] = get_class($e);
+            $context['code'] = $e->getCode();
+            $context['message'] = $e->getMessage();
+            $context['file'] = trim_path_prefix($e->getFile());
+            $context['line'] = $e->getLine();
+            $context['url'] = get_current_url();
+            $context['trace'] = trace_to_call_points(trace_from_exception($e));
+            // Don't log these exceptions
             $ignoredExceptions = [
-                'Exception Exception: You must specify a format!',
-                'Exception InvalidArgumentException: Format name invalid!',
-                'Exception InvalidArgumentException: Unknown format given!',
-                'Exception InvalidArgumentException: Bridge name invalid!',
-                'Exception Exception: twitter: No results for this query',
+                'You must specify a format',
+                'Format name invalid',
+                'Unknown format given',
+                'Bridge name invalid',
+                'Invalid action',
+                'twitter: No results for this query',
+                // telegram
+                'Unable to find channel. The channel is non-existing or non-public',
+                // fb
+                'This group is not public! RSS-Bridge only supports public groups!',
             ];
             foreach ($ignoredExceptions as $ignoredException) {
-                if (str_starts_with($context['message'], $ignoredException)) {
-                    // Don't log this record because it's usually a bot
+                if (str_starts_with($e->getMessage(), $ignoredException)) {
                     return;
                 }
             }

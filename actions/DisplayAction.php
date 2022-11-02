@@ -163,18 +163,18 @@ class DisplayAction implements ActionInterface
                         // Create "new" error message every 24 hours
                         $request['_error_time'] = urlencode((int)(time() / 86400));
 
-                        $message = sprintf('Bridge returned error %s! (%s)', $e->getCode(), $request['_error_time']);
-                        $item->setTitle($message);
+                        // todo: I don't think this _error_time in the title is useful. It's confusing.
+                        $itemTitle = sprintf('Bridge returned error %s! (%s)', $e->getCode(), $request['_error_time']);
+                        $item->setTitle($itemTitle);
                         $item->setURI(get_current_url());
                         $item->setTimestamp(time());
 
-                        $message = create_sane_exception_message($e);
-                        $content = render_template('bridge-error.html.php', [
-                            'message' => $message,
-                            'stacktrace' => create_sane_stacktrace($e),
+                        // todo: consider giving more helpful error messages
+                        $content = render_template(__DIR__ . '/../templates/bridge-error.html.php', [
+                            'error' => render_template(__DIR__ . '/../templates/error.html.php', ['e' => $e]),
                             'searchUrl' => self::createGithubSearchUrl($bridge),
-                            'issueUrl' => self::createGithubIssueUrl($bridge, $e, $message),
-                            'bridge' => $bridge,
+                            'issueUrl' => self::createGithubIssueUrl($bridge, $e, create_sane_exception_message($e)),
+                            'maintainer' => $bridge->getMaintainer(),
                         ]);
                         $item->setContent($content);
 
@@ -211,7 +211,7 @@ class DisplayAction implements ActionInterface
             'body' => sprintf(
                 "```\n%s\n\n%s\n\nQuery string: %s\nVersion: %s\nOs: %s\nPHP version: %s\n```",
                 $message,
-                implode("\n", create_sane_stacktrace($e)),
+                implode("\n", trace_to_call_points(trace_from_exception($e))),
                 $_SERVER['QUERY_STRING'] ?? '',
                 Configuration::getVersion(),
                 PHP_OS_FAMILY,

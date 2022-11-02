@@ -16,10 +16,7 @@ final class RssBridge
         } catch (\Throwable $e) {
             Logger::error('Exception in main', ['e' => $e]);
             http_response_code(500);
-            print render('error.html.php', [
-                'message' => create_sane_exception_message($e),
-                'stacktrace' => create_sane_stacktrace($e),
-            ]);
+            print render(__DIR__ . '/../templates/error.html.php', ['e' => $e]);
         }
     }
 
@@ -38,9 +35,28 @@ final class RssBridge
                 return false;
             }
             $text = sprintf('%s at %s line %s', $message, trim_path_prefix($file), $line);
+            // Drop the current frame
             Logger::warning($text);
             if (Debug::isEnabled()) {
-                print sprintf('<pre>%s</pre>', $text);
+                print sprintf("<pre>%s</pre>\n", e($text));
+            }
+        });
+
+        // There might be some fatal errors which are not caught by set_error_handler() or \Throwable.
+        register_shutdown_function(function () {
+            $error = error_get_last();
+            if ($error) {
+                $message = sprintf(
+                    'Fatal Error %s: %s in %s line %s',
+                    $error['type'],
+                    $error['message'],
+                    trim_path_prefix($error['file']),
+                    $error['line']
+                );
+                Logger::error($message);
+                if (Debug::isEnabled()) {
+                    print sprintf("<pre>%s</pre>\n", e($message));
+                }
             }
         });
 
