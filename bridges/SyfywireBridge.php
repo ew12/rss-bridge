@@ -1,12 +1,12 @@
 <?php
 class SyfywireBridge extends BridgeAbstract {
 	const NAME = 'syfy-wire';
-	const URI = 'https://www.syfy.com/';
+	const URI = 'https://www.syfy.com';
 	const DESCRIPTION = 'syfy.com used to have a rss feed, but that feed is almost 1 year dead now(202209). So here we go.';
 	const CACHE_TIMEOUT = 3600;
 
 	public function collectData() {
-		$html = getSimpleHTMLDOM ( self::URI.'syfy-wire' );
+		$html = getSimpleHTMLDOM ( self::URI.'/syfy-wire' );
 		
 		foreach ( $html->find ( '.card-feed article' ) as $article ) {
 			$item = [];
