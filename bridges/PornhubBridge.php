@@ -86,7 +86,7 @@ class PornhubBridge extends BridgeAbstract
             $item['uri'] = 'https://www.pornhub.com' . $url;
 
             // Content
-            $image = $element->find('img', 0)->getAttribute('data-src');
+            $image = $element->find('img', 0)->getAttribute('src');
             if ($show_images === true) {
                 $item['content'] = '<a href="' . $item['uri'] . '"><img src="' . $image . '"></a>';
             }
