@@ -52,8 +52,7 @@ class DisplayAction implements ActionInterface
             if (! Configuration::getConfig('cache', 'custom_timeout')) {
                 unset($request['_cache_timeout']);
                 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) . '?' . http_build_query($request);
-                header('Location: ' . $uri, true, 301);
-                return;
+                return new Response('', 301, ['Location' => $uri]);
             }
 
             $cache_timeout = filter_var($request['_cache_timeout'], FILTER_VALIDATE_INT);
@@ -108,30 +107,27 @@ class DisplayAction implements ActionInterface
             && (time() - $cache_timeout < $mtime)
             && !Debug::isEnabled()
         ) {
-            // Load cached data
-            // Send "Not Modified" response if client supports it
-            // Implementation based on https://stackoverflow.com/a/10847262
-            if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
-                $stime = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
+            // At this point we found the feed in the cache
 
+            if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
+                // The client wants to know if the feed has changed since its last check
+                $stime = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
                 if ($mtime <= $stime) {
-                    // Cached data is older or same
-                    header('Last-Modified: ' . gmdate('D, d M Y H:i:s ', $mtime) . 'GMT', true, 304);
-                    return;
+                    $lastModified2 = gmdate('D, d M Y H:i:s ', $mtime) . 'GMT';
+                    return new Response('', 304, ['Last-Modified' => $lastModified2]);
                 }
             }
 
+            // Fetch the cached feed from the cache and prepare it
             $cached = $cache->loadData();
-
             if (isset($cached['items']) && isset($cached['extraInfos'])) {
                 foreach ($cached['items'] as $item) {
                     $items[] = new FeedItem($item);
                 }
-
                 $infos = $cached['extraInfos'];
             }
         } else {
-            // Collect new data
+            // At this point we did NOT find the feed in the cache. So invoke the bridge!
             try {
                 $bridge->setDatas($bridge_params);
                 $bridge->collectData();
@@ -145,7 +141,6 @@ class DisplayAction implements ActionInterface
                     }
                     $items = $feedItems;
                 }
-
                 $infos = [
                     'name' => $bridge->getName(),
                     'uri'  => $bridge->getURI(),
@@ -153,33 +148,22 @@ class DisplayAction implements ActionInterface
                     'icon' => $bridge->getIcon()
                 ];
             } catch (\Throwable $e) {
-                Logger::error(sprintf('Exception in %s', $bridgeClassName), ['e' => $e]);
-                $errorCount = logBridgeError($bridge::NAME, $e->getCode());
+                if ($e instanceof HttpException) {
+                    // Produce a smaller log record for http exceptions
+                    Logger::warning(sprintf('Exception in %s: %s', $bridgeClassName, create_sane_exception_message($e)));
+                } else {
+                    // Log the exception
+                    Logger::error(sprintf('Exception in %s', $bridgeClassName), ['e' => $e]);
+                }
 
+                // Emit error only if we are passed the error report limit
+                $errorCount = self::logBridgeError($bridge->getName(), $e->getCode());
                 if ($errorCount >= Configuration::getConfig('error', 'report_limit')) {
                     if (Configuration::getConfig('error', 'output') === 'feed') {
-                        $item = new FeedItem();
-
-                        // Create "new" error message every 24 hours
-                        $request['_error_time'] = urlencode((int)(time() / 86400));
-
-                        // todo: I don't think this _error_time in the title is useful. It's confusing.
-                        $itemTitle = sprintf('Bridge returned error %s! (%s)', $e->getCode(), $request['_error_time']);
-                        $item->setTitle($itemTitle);
-                        $item->setURI(get_current_url());
-                        $item->setTimestamp(time());
-
-                        // todo: consider giving more helpful error messages
-                        $content = render_template(__DIR__ . '/../templates/bridge-error.html.php', [
-                            'error' => render_template(__DIR__ . '/../templates/error.html.php', ['e' => $e]),
-                            'searchUrl' => self::createGithubSearchUrl($bridge),
-                            'issueUrl' => self::createGithubIssueUrl($bridge, $e, create_sane_exception_message($e)),
-                            'maintainer' => $bridge->getMaintainer(),
-                        ]);
-                        $item->setContent($content);
-
-                        $items[] = $item;
+                        // Emit the error as a feed item in a feed so that feed readers can pick it up
+                        $items[] = $this->createFeedItemFromException($e, $bridge);
                     } elseif (Configuration::getConfig('error', 'output') === 'http') {
+                        // Emit as a regular web response
                         throw $e;
                     }
                 }
@@ -197,11 +181,58 @@ class DisplayAction implements ActionInterface
         $format->setExtraInfos($infos);
         $lastModified = $cache->getTime();
         $format->setLastModified($lastModified);
+        $headers = [];
         if ($lastModified) {
-            header('Last-Modified: ' . gmdate('D, d M Y H:i:s ', $lastModified) . 'GMT');
+            $headers['Last-Modified'] = gmdate('D, d M Y H:i:s ', $lastModified) . 'GMT';
         }
-        header('Content-Type: ' . $format->getMimeType() . '; charset=' . $format->getCharset());
-        print $format->stringify();
+        $headers['Content-Type'] = $format->getMimeType() . '; charset=' . $format->getCharset();
+        return new Response($format->stringify(), 200, $headers);
+    }
+
+    private function createFeedItemFromException($e, BridgeInterface $bridge): FeedItem
+    {
+        $item = new FeedItem();
+
+        // Create a unique identifier every 24 hours
+        $uniqueIdentifier = urlencode((int)(time() / 86400));
+        $itemTitle = sprintf('Bridge returned error %s! (%s)', $e->getCode(), $uniqueIdentifier);
+        $item->setTitle($itemTitle);
+        $item->setURI(get_current_url());
+        $item->setTimestamp(time());
+
+        // Create a item identifier for feed readers e.g. "staysafetv twitch videos_19389"
+        $item->setUid($bridge->getName() . '_' . $uniqueIdentifier);
+
+        $content = render_template(__DIR__ . '/../templates/bridge-error.html.php', [
+            'error' => render_template(__DIR__ . '/../templates/error.html.php', ['e' => $e]),
+            'searchUrl' => self::createGithubSearchUrl($bridge),
+            'issueUrl' => self::createGithubIssueUrl($bridge, $e, create_sane_exception_message($e)),
+            'maintainer' => $bridge->getMaintainer(),
+        ]);
+        $item->setContent($content);
+        return $item;
+    }
+
+    private static function logBridgeError($bridgeName, $code)
+    {
+        $cacheFactory = new CacheFactory();
+        $cache = $cacheFactory->create();
+        $cache->setScope('error_reporting');
+        $cache->setkey([$bridgeName . '_' . $code]);
+        $cache->purgeCache(86400); // 24 hours
+        if ($report = $cache->loadData()) {
+            $report = Json::decode($report);
+            $report['time'] = time();
+            $report['count']++;
+        } else {
+            $report = [
+                'error' => $code,
+                'time' => time(),
+                'count' => 1,
+            ];
+        }
+        $cache->saveData(Json::encode($report));
+        return $report['count'];
     }
 
     private static function createGithubIssueUrl($bridge, $e, string $message): string
