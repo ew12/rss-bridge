@@ -14,9 +14,9 @@ class SyfywireBridge extends BridgeAbstract {
 				$item['enclosures'] = array ( self::URI.$article->find('img', 0)->getAttribute('src') );
 				$item['uri'] = self::URI.$article->find ( 'a', 0 ) ->href;
 				$item['title'] = $article->find ( 'h2.headline', 0 )->innertext();
-				$item['timestamp'] = $article->find( '.date', 0 )->getAttribute ( 'datetime' ) if $article->find ( '.date', 0 ) !== null else '';
-				$item['author'] = $article->find ( '.author-name', 0 )->innertext() if $article->find ( '.author-name', 0 ) !== null else '';
-				$item['content'] = $article->find ( '.description' , 0 )->innertext() if $article->find ( '.description', 0 ) !== null else '';
+				$item['timestamp'] = $article->find( '.date', 0 )->getAttribute ( 'datetime' ) if ( $article->find ( '.date', 0 ) !== null ) else '';
+				$item['author'] = $article->find ( '.author-name', 0 )->innertext() if ( $article->find ( '.author-name', 0 ) !== null ) else '';
+				$item['content'] = $article->find ( '.description' , 0 )->innertext() if ( $article->find ( '.description', 0 ) !== null ) else '';
 				$result = array_filter ( $item, function ( $val ) { return $val !== ''; });
 				if ( count ( $result ) == count ( $item ) ) {
 					$this->items[] = $item;
