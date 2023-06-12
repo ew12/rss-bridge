@@ -115,7 +115,7 @@ function getContents(
         'Sec-Fetch-Mode' => 'navigate',
         'Sec-Fetch-Site' => 'none',
         'Sec-Fetch-User' => '?1',
-        'TE' => 'Trailers',
+        'TE' => 'trailers',
     ];
     $httpHeadersNormalized = [];
     foreach ($httpHeaders as $httpHeader) {
@@ -191,7 +191,8 @@ function getContents(
             $cloudflareTitles = [
                 '<title>Just a moment...',
                 '<title>Please Wait...',
-                '<title>Attention Required!'
+                '<title>Attention Required!',
+                '<title>Security | Glassdoor',
             ];
             foreach ($cloudflareTitles as $cloudflareTitle) {
                 if (str_contains($result['body'], $cloudflareTitle)) {
@@ -437,14 +438,17 @@ function getSimpleHTMLDOMCached(
         $time !== false
         && (time() - $duration < $time)
         && !Debug::isEnabled()
-    ) { // Contents within duration
+    ) {
+        // Contents within duration and debug mode is disabled
         $content = $cache->loadData();
-    } else { // Content not within duration
+    } else {
+        // Contents not within duration, or debug mode is enabled
         $content = getContents(
             $url,
             $header ?? [],
             $opts ?? []
         );
+        // todo: fix bad if statement
         if ($content !== false) {
             $cache->saveData($content);
         }
