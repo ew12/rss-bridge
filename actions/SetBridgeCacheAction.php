@@ -23,7 +23,11 @@ class SetBridgeCacheAction implements ActionInterface
 
         $bridgeFactory = new BridgeFactory();
 
-        $bridgeClassName = $bridgeFactory->createBridgeClassName($request['bridge'] ?? '');
+        $bridgeName = $request['bridge'] ?? null;
+        $bridgeClassName = $bridgeFactory->createBridgeClassName($bridgeName);
+        if (!$bridgeClassName) {
+            throw new \Exception(sprintf('Bridge not found: %s', $bridgeName));
+        }
 
         // whitelist control
         if (!$bridgeFactory->isEnabled($bridgeClassName)) {
@@ -35,10 +39,12 @@ class SetBridgeCacheAction implements ActionInterface
         $bridge->loadConfiguration();
         $value = $request['value'];
 
-        $cacheFactory = new CacheFactory();
-
-        $cache = $cacheFactory->create();
+        $cache = RssBridge::getCache();
         $cache->setScope(get_class($bridge));
+        if (!is_array($key)) {
+            // not sure if $key is an array when it comes in from request
+            $key = [$key];
+        }
         $cache->setKey($key);
         $cache->saveData($value);
 
