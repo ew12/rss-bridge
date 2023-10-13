@@ -66,11 +66,11 @@ by_bridge = false
 enable = false
 
 ; The username for authentication. Insert this name when prompted for login.
-username = ""
+username = "admin"
 
 ; The password for authentication. Insert this password when prompted for login.
 ; Use a strong password to prevent others from guessing your login!
-password = ""
+password = "7afbf648a369261"
 
 [error]
 
@@ -94,4 +94,6 @@ host = "localhost"
 port = 11211
 
 [InstagramBridge]
+session_id = ""
+ds_user_id = ""
 cache_timeout = 86400
