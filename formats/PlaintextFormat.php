@@ -1,24 +1,19 @@
 <?php
-/**
-* Plaintext
-* Returns $this->items as raw php data.
-*/
-class PlaintextFormat extends FormatAbstract {
-	const MIME_TYPE = 'text/plain';
 
-	public function stringify(){
-		$items = $this->getItems();
-		$data = array();
+class PlaintextFormat extends FormatAbstract
+{
+    const MIME_TYPE = 'text/plain';
 
-		foreach($items as $item) {
-			$data[] = $item->toArray();
-		}
-
-		$toReturn = print_r($data, true);
-
-		// Remove invalid non-UTF8 characters
-		ini_set('mbstring.substitute_character', 'none');
-		$toReturn = mb_convert_encoding($toReturn, $this->getCharset(), 'UTF-8');
-		return $toReturn;
-	}
+    public function stringify()
+    {
+        $data = [];
+        foreach ($this->getItems() as $item) {
+            $data[] = $item->toArray();
+        }
+        $text = print_r($data, true);
+        // Remove invalid non-UTF8 characters
+        ini_set('mbstring.substitute_character', 'none');
+        $text = mb_convert_encoding($text, $this->getCharset(), 'UTF-8');
+        return $text;
+    }
 }

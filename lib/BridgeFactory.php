@@ -1,87 +1,84 @@
 <?php
 
-final class BridgeFactory {
+final class BridgeFactory
+{
+    private CacheInterface $cache;
+    private Logger $logger;
+    private array $bridgeClassNames = [];
+    private array $enabledBridges = [];
+    private array $missingEnabledBridges = [];
 
-	private $folder;
-	private $bridgeNames = [];
-	private $whitelist = [];
+    public function __construct()
+    {
+        $this->cache = RssBridge::getCache();
+        $this->logger = RssBridge::getLogger();
 
-	public function __construct(string $folder = PATH_LIB_BRIDGES)
-	{
-		$this->folder = $folder;
+        // Create all possible bridge class names from fs
+        foreach (scandir(__DIR__ . '/../bridges/') as $file) {
+            if (preg_match('/^([^.]+Bridge)\.php$/U', $file, $m)) {
+                $this->bridgeClassNames[] = $m[1];
+            }
+        }
 
-		// create names
-		foreach(scandir($this->folder) as $file) {
-			if(preg_match('/^([^.]+)Bridge\.php$/U', $file, $m)) {
-				$this->bridgeNames[] = $m[1];
-			}
-		}
+        $enabledBridges = Configuration::getConfig('system', 'enabled_bridges');
+        if ($enabledBridges === null) {
+            throw new \Exception('No bridges are enabled...');
+        }
+        foreach ($enabledBridges as $enabledBridge) {
+            if ($enabledBridge === '*') {
+                $this->enabledBridges = $this->bridgeClassNames;
+                break;
+            }
+            $bridgeClassName = $this->createBridgeClassName($enabledBridge);
+            if ($bridgeClassName) {
+                $this->enabledBridges[] = $bridgeClassName;
+            } else {
+                $this->missingEnabledBridges[] = $enabledBridge;
+                $this->logger->info(sprintf('Bridge not found: %s', $enabledBridge));
+            }
+        }
+    }
 
-		// create whitelist
-		if (file_exists(WHITELIST)) {
-			$contents = trim(file_get_contents(WHITELIST));
-		} elseif (file_exists(WHITELIST_DEFAULT)) {
-			$contents = trim(file_get_contents(WHITELIST_DEFAULT));
-		} else {
-			$contents = '';
-		}
-		if ($contents === '*') { // Whitelist all bridges
-			$this->whitelist = $this->getBridgeNames();
-		} else {
-			foreach (explode("\n", $contents) as $bridgeName) {
-				$this->whitelist[] = $this->sanitizeBridgeName($bridgeName);
-			}
-		}
-	}
+    public function create(string $name): BridgeAbstract
+    {
+        return new $name($this->cache, $this->logger);
+    }
 
-	public function create(string $name): BridgeInterface
-	{
-		if(preg_match('/^[A-Z][a-zA-Z0-9-]*$/', $name)) {
-			$className = sprintf('%sBridge', $this->sanitizeBridgeName($name));
-			return new $className();
-		}
-		throw new \InvalidArgumentException('Bridge name invalid!');
-	}
+    public function isEnabled(string $bridgeName): bool
+    {
+        return in_array($bridgeName, $this->enabledBridges);
+    }
 
-	public function getBridgeNames(): array
-	{
-		return $this->bridgeNames;
-	}
+    public function createBridgeClassName(string $bridgeName): ?string
+    {
+        $name = self::normalizeBridgeName($bridgeName);
+        $namesLoweredCase = array_map('strtolower', $this->bridgeClassNames);
+        $nameLoweredCase = strtolower($name);
+        if (! in_array($nameLoweredCase, $namesLoweredCase)) {
+            return null;
+        }
+        $index = array_search($nameLoweredCase, $namesLoweredCase);
+        return $this->bridgeClassNames[$index];
+    }
 
-	public function isWhitelisted($name): bool
-	{
-		return in_array($this->sanitizeBridgeName($name), $this->whitelist);
-	}
+    public static function normalizeBridgeName(string $name)
+    {
+        if (preg_match('/(.+)(?:\.php)/', $name, $matches)) {
+            $name = $matches[1];
+        }
+        if (!preg_match('/(Bridge)$/i', $name)) {
+            $name = sprintf('%sBridge', $name);
+        }
+        return $name;
+    }
 
-	private function sanitizeBridgeName($name) {
+    public function getBridgeClassNames(): array
+    {
+        return $this->bridgeClassNames;
+    }
 
-		if(!is_string($name)) {
-			return null;
-		}
-
-		// Trim trailing '.php' if exists
-		if (preg_match('/(.+)(?:\.php)/', $name, $matches)) {
-			$name = $matches[1];
-		}
-
-		// Trim trailing 'Bridge' if exists
-		if (preg_match('/(.+)(?:Bridge)/i', $name, $matches)) {
-			$name = $matches[1];
-		}
-
-		// Improve performance for correctly written bridge names
-		if (in_array($name, $this->getBridgeNames())) {
-			$index = array_search($name, $this->getBridgeNames());
-			return $this->getBridgeNames()[$index];
-		}
-
-		// The name is valid if a corresponding bridge file is found on disk
-		if (in_array(strtolower($name), array_map('strtolower', $this->getBridgeNames()))) {
-			$index = array_search(strtolower($name), array_map('strtolower', $this->getBridgeNames()));
-			return $this->getBridgeNames()[$index];
-		}
-
-		Debug::log('Invalid bridge name specified: "' . $name . '"!');
-		return null;
-	}
+    public function getMissingEnabledBridges(): array
+    {
+        return $this->missingEnabledBridges;
+    }
 }

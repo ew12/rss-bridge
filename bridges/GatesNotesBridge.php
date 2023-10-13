@@ -1,54 +1,107 @@
 <?php
-class GatesNotesBridge extends FeedExpander {
 
-	const MAINTAINER = 'corenting';
-	const NAME = 'Gates Notes';
-	const URI = 'https://www.gatesnotes.com';
-	const DESCRIPTION = 'Returns the newest articles.';
-	const CACHE_TIMEOUT = 21600; // 6h
+class GatesNotesBridge extends BridgeAbstract
+{
+    const MAINTAINER = 'corenting';
+    const NAME = 'Gates Notes';
+    const URI = 'https://www.gatesnotes.com';
+    const DESCRIPTION = 'Returns the newest articles.';
+    const CACHE_TIMEOUT = 21600; // 6h
 
-	protected function parseItem($item){
-		$item = parent::parseItem($item);
+    public function collectData()
+    {
+        $params = [
+            'validYearsString' => 'all',
+            'setNumber' => '0',
+            'sortByVideo' => 'all',
+            'sortByTopic' => 'all'
+        ];
+        $api_endpoint = '/api/TGNWebAPI/Get_Filtered_Article_Set?';
+        $apiUrl = self::URI . $api_endpoint . http_build_query($params);
 
-		$article_html = getSimpleHTMLDOMCached($item['uri']);
-		if(!$article_html) {
-			$item['content'] .= '<p><em>Could not request ' . $this->getName() . ': ' . $item['uri'] . '</em></p>';
-			return $item;
-		}
-		$article_html = defaultLinkTo($article_html, $this->getURI());
+        $rawContent = getContents($apiUrl);
+        $cleanedContent = str_replace([
+            '<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/">',
+            '</string>',
+            '\r\n',
+        ], '', $rawContent);
+        $cleanedContent = str_replace('\"', '"', $cleanedContent);
+        $cleanedContent = trim($cleanedContent, '"');
 
-		$top_description = '<p>' . $article_html->find('div.article_top_description', 0)->innertext . '</p>';
-		$hero_image = '<img src=' . $article_html->find('img.article_top_DMT_Image', 0)->getAttribute('data-src') . '>';
+        $json = Json::decode($cleanedContent, false);
 
-		$article_body = $article_html->find('div.TGN_Article_ReadTimeSection', 0);
-		// Convert iframe of Youtube videos to link
-		foreach($article_body->find('iframe') as $found) {
+        foreach ($json as $article) {
+            $item = [];
 
-			$iframeUrl = $found->getAttribute('src');
+            $articleUri = self::URI . '/' . $article->{'_system_'}->name;
 
-			if ($iframeUrl) {
-				$text = 'Embedded Youtube video, click here to watch on Youtube.com';
-				$found->outertext = '<p><a href="' . $iframeUrl . '">' . $text . '</a></p>';
-			}
-		}
-		// Remove <link> CSS ressources
-		foreach($article_body->find('link') as $found) {
+            $item['uri'] = $articleUri;
+            $item['title'] = $article->headline;
+            $item['content'] = self::getItemContent($articleUri);
+            $item['timestamp'] = strtotime($article->date);
 
-			$linkedRessourceUrl = $found->getAttribute('href');
+            $this->items[] = $item;
+        }
+    }
 
-			if (str_ends_with($linkedRessourceUrl, '.css')) {
-				$found->outertext = '';
-			}
-		}
-		$article_body = sanitize($article_body->innertext);
+    protected function getItemContent($articleUri)
+    {
+        // We need to change the headers as the normal desktop website
+        // use canvas-based image carousels for some pictures
+        $headers = [
+            'User-Agent: Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        ];
+        $article_html = getSimpleHTMLDOMCached($articleUri, 86400, $headers);
 
-		$item['content'] = $top_description . $hero_image . $article_body;
+        $content = '';
+        if (!$article_html) {
+            $content .= '<p><em>Could not request ' . $this->getName() . ': ' . $articleUri . '</em></p>';
+            return $content;
+        }
+        $article_html = defaultLinkTo($article_html, $this->getURI());
 
-		return $item;
-	}
+        $top_description = '<p>' . $article_html->find('div.article_top_description', 0)->innertext . '</p>';
+        $heroImage = $article_html->find('img.article_top_DMT_Image', 0);
+        if ($heroImage) {
+            $hero_image = '<img src=' . $heroImage->getAttribute('data-src') . '>';
+        }
+        $article_body = $article_html->find('div.TGN_Article_ReadTimeSection', 0);
 
-	public function collectData(){
-		$feed = static::URI . '/rss';
-		$this->collectExpandableDatas($feed);
-	}
+        // Remove the menu bar on some articles (PDF download etc.)
+        foreach ($article_body->find('.TGN_MenuHolder') as $found) {
+            $found->remove();
+        }
+
+        // For the carousels pictures, we still to remove the lazy-loading and force the real picture
+        foreach ($article_body->find('canvas') as $found) {
+            $found->remove();
+        }
+        foreach ($article_body->find('.TGN_PE_C_Img') as $found) {
+            $found->setAttribute('src', $found->getAttribute('data-src'));
+        }
+
+        // Convert iframe of Youtube videos to link
+        foreach ($article_body->find('iframe') as $found) {
+            $iframeUrl = $found->getAttribute('src');
+
+            if ($iframeUrl) {
+                $text = 'Embedded Youtube video, click here to watch on Youtube.com';
+                $found->outertext = '<p><a href="' . $iframeUrl . '">' . $text . '</a></p>';
+            }
+        }
+
+        // Remove <link> CSS ressources
+        foreach ($article_body->find('link') as $found) {
+            $linkedRessourceUrl = $found->getAttribute('href');
+
+            if (str_ends_with($linkedRessourceUrl, '.css')) {
+                $found->outertext = '';
+            }
+        }
+        $article_body = sanitize($article_body->innertext);
+
+        $content = $top_description . ($hero_image ?? '') . $article_body;
+
+        return $content;
+    }
 }
