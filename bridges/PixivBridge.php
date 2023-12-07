@@ -6,6 +6,7 @@ class PixivBridge extends BridgeAbstract
     // https://hackage.haskell.org/package/pixiv-0.1.0/docs/Web-Pixiv-Types.html
     const NAME = 'Pixiv Bridge';
     const URI = 'https://www.pixiv.net/';
+    const CACHE_TIMEOUT = 86400; // 24h
     const DESCRIPTION = 'Returns the tag search from pixiv.net';
     const MAINTAINER = 'mruac';
     const CONFIGURATION = [
@@ -175,6 +176,13 @@ class PixivBridge extends BridgeAbstract
         return $json;
     }
 
+    protected function getContents($uri)
+    {
+        require 'minecookies.php';
+        $headers = $myPixivHeaders;
+        return getContents($uri, $headers);
+    }    
+    
     private function collectWorksArray()
     {
         $content = $this->getData($this->getSearchURI($this->getInput('mode')), true, true);
