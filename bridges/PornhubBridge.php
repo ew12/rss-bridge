@@ -67,7 +67,9 @@ class PornhubBridge extends BridgeAbstract
 
         $show_images = $this->getInput('show_images');
 
-        $html = getSimpleHTMLDOM($uri);
+        $html = getSimpleHTMLDOM($uri, [
+            'cookie: accessAgeDisclaimerPH=1'
+        ]);
 
         foreach ($html->find('div.videoUList ul.videos li.videoblock') as $element) {
             $item = [];
@@ -85,17 +87,25 @@ class PornhubBridge extends BridgeAbstract
             $url = $element->find('a', 0)->href;
             $item['uri'] = 'https://www.pornhub.com' . $url;
 
+            // Duration
+            $marker = $element->find('div.marker-overlays var', 0);
+            $duration = $marker->innertext ?? '';
+
             // Content
-            $image = $element->find('img', 0)->getAttribute('data-src');
+            $videoImage = $element->find('img', 0);
+            $image = $videoImage->getAttribute('data-src') ?: $videoImage->getAttribute('src');
             if ($show_images === true) {
-                $item['content'] = '<a href="' . $item['uri'] . '"><img src="' . $image . '"></a>';
+                $item['content'] = sprintf('<a href="%s"><img src="%s"></a><br>%s', $item['uri'], $image, $duration);
             }
 
-            // date hack, guess upload YYYYMMDD from thumbnail URL (format: https://ci.phncdn.com/videos/201907/25/--- )
             $uploaded = explode('/', $image);
-            $uploaded = strtotime($uploaded[4] . $uploaded[5]);
-            $item['timestamp'] = $uploaded;
-
+            if (isset($uploaded[4])) {
+                // date hack, guess upload YYYYMMDD from thumbnail URL (format: https://ci.phncdn.com/videos/201907/25/--- )
+                $uploadTimestamp = strtotime($uploaded[4] . $uploaded[5]);
+                $item['timestamp'] = $uploadTimestamp;
+            } else {
+                // The thumbnail url did not have a date in it for some unknown reason
+            }
             $this->items[] = $item;
         }
     }

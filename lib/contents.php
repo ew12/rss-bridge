@@ -1,65 +1,11 @@
 <?php
 
-final class HttpException extends \Exception
-{
-}
-
-// todo: move this somewhere useful, possibly into a function
-const RSSBRIDGE_HTTP_STATUS_CODES = [
-    '100' => 'Continue',
-    '101' => 'Switching Protocols',
-    '200' => 'OK',
-    '201' => 'Created',
-    '202' => 'Accepted',
-    '203' => 'Non-Authoritative Information',
-    '204' => 'No Content',
-    '205' => 'Reset Content',
-    '206' => 'Partial Content',
-    '300' => 'Multiple Choices',
-    '302' => 'Found',
-    '303' => 'See Other',
-    '304' => 'Not Modified',
-    '305' => 'Use Proxy',
-    '400' => 'Bad Request',
-    '401' => 'Unauthorized',
-    '402' => 'Payment Required',
-    '403' => 'Forbidden',
-    '404' => 'Not Found',
-    '405' => 'Method Not Allowed',
-    '406' => 'Not Acceptable',
-    '407' => 'Proxy Authentication Required',
-    '408' => 'Request Timeout',
-    '409' => 'Conflict',
-    '410' => 'Gone',
-    '411' => 'Length Required',
-    '412' => 'Precondition Failed',
-    '413' => 'Request Entity Too Large',
-    '414' => 'Request-URI Too Long',
-    '415' => 'Unsupported Media Type',
-    '416' => 'Requested Range Not Satisfiable',
-    '417' => 'Expectation Failed',
-    '429' => 'Too Many Requests',
-    '500' => 'Internal Server Error',
-    '501' => 'Not Implemented',
-    '502' => 'Bad Gateway',
-    '503' => 'Service Unavailable',
-    '504' => 'Gateway Timeout',
-    '505' => 'HTTP Version Not Supported'
-];
-
 /**
  * Fetch data from an http url
  *
  * @param array $httpHeaders E.g. ['Content-type: text/plain']
  * @param array $curlOptions Associative array e.g. [CURLOPT_MAXREDIRS => 3]
- * @param bool $returnFull Whether to return an array:
- *                         [
- *                              'code' => int,
- *                              'header' => array,
- *                              'content' => string,
- *                              'status_lines' => array,
- *                         ]
-
+ * @param bool $returnFull Whether to return an array: ['code' => int, 'headers' => array, 'content' => string]
  * @return string|array
  */
 function getContents(
@@ -68,155 +14,116 @@ function getContents(
     array $curlOptions = [],
     bool $returnFull = false
 ) {
-    $cacheFactory = new CacheFactory();
+    $httpClient = RssBridge::getHttpClient();
+    $cache = RssBridge::getCache();
 
-    $cache = $cacheFactory->create();
-    $cache->setScope('server');
-    $cache->purgeCache(86400); // 24 hours (forced)
-    $cache->setKey([$url]);
-
+    $httpHeadersNormalized = [];
+    foreach ($httpHeaders as $httpHeader) {
+        $parts = explode(':', $httpHeader);
+        $headerName = trim($parts[0]);
+        $headerValue = trim(implode(':', array_slice($parts, 1)));
+        $httpHeadersNormalized[$headerName] = $headerValue;
+    }
+    // Snagged from https://github.com/lwthiker/curl-impersonate/blob/main/firefox/curl_ff102
+    $defaultHttpHeaders = [
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language' => 'en-US,en;q=0.5',
+        'Upgrade-Insecure-Requests' => '1',
+        'Sec-Fetch-Dest' => 'document',
+        'Sec-Fetch-Mode' => 'navigate',
+        'Sec-Fetch-Site' => 'none',
+        'Sec-Fetch-User' => '?1',
+        'TE' => 'trailers',
+    ];
     $config = [
-        'headers' => $httpHeaders,
+        'useragent' => Configuration::getConfig('http', 'useragent'),
+        'timeout' => Configuration::getConfig('http', 'timeout'),
+        'headers' => array_merge($defaultHttpHeaders, $httpHeadersNormalized),
         'curl_options' => $curlOptions,
     ];
-    if (defined('PROXY_URL') && !defined('NOPROXY')) {
-        $config['proxy'] = PROXY_URL;
-    }
-    if (!Debug::isEnabled() && $cache->getTime()) {
-        $config['if_not_modified_since'] = $cache->getTime();
+
+    $maxFileSize = Configuration::getConfig('http', 'max_filesize');
+    if ($maxFileSize) {
+        // Convert from MB to B by multiplying with 2^20 (1M)
+        $config['max_filesize'] = $maxFileSize * 2 ** 20;
     }
 
-    $result = _http_request($url, $config);
-    $response = [
-        'code' => $result['code'],
-        'status_lines' => $result['status_lines'],
-        'header' => $result['headers'],
-        'content' => $result['body'],
-    ];
+    if (Configuration::getConfig('proxy', 'url') && !defined('NOPROXY')) {
+        $config['proxy'] = Configuration::getConfig('proxy', 'url');
+    }
 
-    switch ($result['code']) {
+    $requestBodyHash = null;
+    if (isset($curlOptions[CURLOPT_POSTFIELDS])) {
+        $requestBodyHash = md5(Json::encode($curlOptions[CURLOPT_POSTFIELDS], false));
+    }
+    $cacheKey = implode('_', ['server',  $url, $requestBodyHash]);
+
+    /** @var Response $cachedResponse */
+    $cachedResponse = $cache->get($cacheKey);
+    if ($cachedResponse) {
+        $cachedLastModified = $cachedResponse->getHeader('last-modified');
+        if ($cachedLastModified) {
+            try {
+                // Some servers send Unix timestamp instead of RFC7231 date. Prepend it with @ to allow parsing as DateTime
+                $cachedLastModified = new \DateTimeImmutable((is_numeric($cachedLastModified) ? '@' : '') . $cachedLastModified);
+                $config['if_not_modified_since'] = $cachedLastModified->getTimestamp();
+            } catch (Exception $dateTimeParseFailue) {
+                // Ignore invalid 'Last-Modified' HTTP header value
+            }
+        }
+    }
+
+    $response = $httpClient->request($url, $config);
+
+    switch ($response->getCode()) {
         case 200:
         case 201:
         case 202:
-            if (isset($result['headers']['cache-control'])) {
-                $cachecontrol = $result['headers']['cache-control'];
-                $lastValue = array_pop($cachecontrol);
-                $directives = explode(',', $lastValue);
+            $cacheControl = $response->getHeader('cache-control');
+            if ($cacheControl) {
+                $directives = explode(',', $cacheControl);
                 $directives = array_map('trim', $directives);
                 if (in_array('no-cache', $directives) || in_array('no-store', $directives)) {
                     // Don't cache as instructed by the server
                     break;
                 }
             }
-            $cache->saveData($result['body']);
+            $cache->set($cacheKey, $response, 86400 * 10);
             break;
-        case 304: // Not Modified
-            $response['content'] = $cache->loadData();
+        case 301:
+        case 302:
+        case 303:
+            // todo: cache
+            break;
+        case 304:
+            // Not Modified
+            $response = $response->withBody($cachedResponse->getBody());
             break;
         default:
-            throw new HttpException(
-                sprintf(
-                    '%s %s',
-                    $result['code'],
-                    RSSBRIDGE_HTTP_STATUS_CODES[$result['code']] ?? ''
-                ),
-                $result['code']
+            $exceptionMessage = sprintf(
+                '%s resulted in %s %s %s',
+                $url,
+                $response->getCode(),
+                $response->getStatusLine(),
+                // If debug, include a part of the response body in the exception message
+                Debug::isEnabled() ? mb_substr($response->getBody(), 0, 500) : '',
             );
+
+            if (CloudFlareException::isCloudFlareResponse($response)) {
+                throw new CloudFlareException($exceptionMessage, $response->getCode());
+            }
+            throw new HttpException(trim($exceptionMessage), $response->getCode());
     }
     if ($returnFull === true) {
-        return $response;
+        // todo: return the actual response object
+        return [
+            'code'      => $response->getCode(),
+            'headers'   => $response->getHeaders(),
+            // For legacy reasons, use 'content' instead of 'body'
+            'content'   => $response->getBody(),
+        ];
     }
-    return $response['content'];
-}
-
-/**
- * Private function used internally
- *
- * Fetch content from url
- *
- * @throws HttpException
- */
-function _http_request(string $url, array $config = []): array
-{
-    $defaults = [
-        'useragent' => Configuration::getConfig('http', 'useragent'),
-        'timeout' => Configuration::getConfig('http', 'timeout'),
-        'headers' => [],
-        'proxy' => null,
-        'curl_options' => [],
-        'if_not_modified_since' => null,
-        'retries' => 3,
-    ];
-    $config = array_merge($defaults, $config);
-
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $config['headers']);
-    curl_setopt($ch, CURLOPT_USERAGENT, $config['useragent']);
-    curl_setopt($ch, CURLOPT_TIMEOUT, $config['timeout']);
-    curl_setopt($ch, CURLOPT_ENCODING, '');
-    curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
-    if ($config['proxy']) {
-        curl_setopt($ch, CURLOPT_PROXY, $config['proxy']);
-    }
-    if (curl_setopt_array($ch, $config['curl_options']) === false) {
-        throw new \Exception('Tried to set an illegal curl option');
-    }
-
-    if ($config['if_not_modified_since']) {
-        curl_setopt($ch, CURLOPT_TIMEVALUE, $config['if_not_modified_since']);
-        curl_setopt($ch, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
-    }
-
-    $responseStatusLines = [];
-    $responseHeaders = [];
-    curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($ch, $rawHeader) use (&$responseHeaders, &$responseStatusLines) {
-        $len = strlen($rawHeader);
-        if ($rawHeader === "\r\n") {
-            return $len;
-        }
-        if (preg_match('#^HTTP/(2|1.1|1.0)#', $rawHeader)) {
-            $responseStatusLines[] = $rawHeader;
-            return $len;
-        }
-        $header = explode(':', $rawHeader);
-        if (count($header) === 1) {
-            return $len;
-        }
-        $name = mb_strtolower(trim($header[0]));
-        $value = trim(implode(':', array_slice($header, 1)));
-        if (!isset($responseHeaders[$name])) {
-            $responseHeaders[$name] = [];
-        }
-        $responseHeaders[$name][] = $value;
-        return $len;
-    });
-
-    $attempts = 0;
-    while (true) {
-        $attempts++;
-        $data = curl_exec($ch);
-        if ($data !== false) {
-            // The network call was successful, so break out of the loop
-            break;
-        }
-        if ($attempts > $config['retries']) {
-            // Finally give up
-            throw new HttpException(sprintf('%s (%s)', curl_error($ch), curl_errno($ch)));
-        }
-    }
-
-    $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    return [
-        'code'      => $statusCode,
-        'status_lines' => $responseStatusLines,
-        'headers'   => $responseHeaders,
-        'body'      => $data,
-    ];
+    return $response->getBody();
 }
 
 /**
@@ -256,13 +163,12 @@ function getSimpleHTMLDOM(
     $defaultBRText = DEFAULT_BR_TEXT,
     $defaultSpanText = DEFAULT_SPAN_TEXT
 ) {
-    $content = getContents(
-        $url,
-        $header ?? [],
-        $opts ?? []
-    );
+    $html = getContents($url, $header ?? [], $opts ?? []);
+    if ($html === '') {
+        throw new \Exception('Unable to parse dom because the http response was the empty string');
+    }
     return str_get_html(
-        $content,
+        $html,
         $lowercase,
         $forceTagsClosed,
         $target_charset,
@@ -279,7 +185,7 @@ function getSimpleHTMLDOM(
  * _Notice_: Cached contents are forcefully removed after 24 hours (86400 seconds).
  *
  * @param string $url The URL.
- * @param int $duration Cache duration in seconds.
+ * @param int $ttl Cache duration in seconds.
  * @param array $header (optional) A list of cURL header.
  * For more information follow the links below.
  * * https://php.net/manual/en/function.curl-setopt.php
@@ -304,7 +210,7 @@ function getSimpleHTMLDOM(
  */
 function getSimpleHTMLDOMCached(
     $url,
-    $duration = 86400,
+    $ttl = 86400,
     $header = [],
     $opts = [],
     $lowercase = true,
@@ -314,37 +220,13 @@ function getSimpleHTMLDOMCached(
     $defaultBRText = DEFAULT_BR_TEXT,
     $defaultSpanText = DEFAULT_SPAN_TEXT
 ) {
-    Debug::log('Caching url ' . $url . ', duration ' . $duration);
-
-    // Initialize cache
-    $cacheFactory = new CacheFactory();
-
-    $cache = $cacheFactory->create();
-    $cache->setScope('pages');
-    $cache->purgeCache(86400); // 24 hours (forced)
-
-    $params = [$url];
-    $cache->setKey($params);
-
-    // Determine if cached file is within duration
-    $time = $cache->getTime();
-    if (
-        $time !== false
-        && (time() - $duration < $time)
-        && !Debug::isEnabled()
-    ) { // Contents within duration
-        $content = $cache->loadData();
-    } else { // Content not within duration
-        $content = getContents(
-            $url,
-            $header ?? [],
-            $opts ?? []
-        );
-        if ($content !== false) {
-            $cache->saveData($content);
-        }
+    $cache = RssBridge::getCache();
+    $cacheKey = 'pages_' . $url;
+    $content = $cache->get($cacheKey);
+    if (!$content) {
+        $content = getContents($url, $header ?? [], $opts ?? []);
+        $cache->set($cacheKey, $content, $ttl);
     }
-
     return str_get_html(
         $content,
         $lowercase,
@@ -354,69 +236,4 @@ function getSimpleHTMLDOMCached(
         $defaultBRText,
         $defaultSpanText
     );
-}
-
-/**
- * Determines the MIME type from a URL/Path file extension.
- *
- * _Remarks_:
- *
- * * The built-in functions `mime_content_type` and `fileinfo` require fetching
- * remote contents.
- * * A caller can hint for a MIME type by appending `#.ext` to the URL (i.e. `#.image`).
- *
- * Based on https://stackoverflow.com/a/1147952
- *
- * @param string $url The URL or path to the file.
- * @return string The MIME type of the file.
- */
-function getMimeType($url)
-{
-    static $mime = null;
-
-    if (is_null($mime)) {
-        // Default values, overriden by /etc/mime.types when present
-        $mime = [
-            'jpg' => 'image/jpeg',
-            'gif' => 'image/gif',
-            'png' => 'image/png',
-            'image' => 'image/*',
-            'mp3' => 'audio/mpeg',
-        ];
-        // '@' is used to mute open_basedir warning, see issue #818
-        if (@is_readable('/etc/mime.types')) {
-            $file = fopen('/etc/mime.types', 'r');
-            while (($line = fgets($file)) !== false) {
-                $line = trim(preg_replace('/#.*/', '', $line));
-                if (!$line) {
-                    continue;
-                }
-                $parts = preg_split('/\s+/', $line);
-                if (count($parts) == 1) {
-                    continue;
-                }
-                $type = array_shift($parts);
-                foreach ($parts as $part) {
-                    $mime[$part] = $type;
-                }
-            }
-            fclose($file);
-        }
-    }
-
-    if (strpos($url, '?') !== false) {
-        $url_temp = substr($url, 0, strpos($url, '?'));
-        if (strpos($url, '#') !== false) {
-            $anchor = substr($url, strpos($url, '#'));
-            $url_temp .= $anchor;
-        }
-        $url = $url_temp;
-    }
-
-    $ext = strtolower(pathinfo($url, PATHINFO_EXTENSION));
-    if (!empty($mime[$ext])) {
-        return $mime[$ext];
-    }
-
-    return 'application/octet-stream';
 }

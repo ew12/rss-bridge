@@ -1,39 +1,27 @@
 <?php
 
-/**
- * This file is part of RSS-Bridge, a PHP project capable of generating RSS and
- * Atom feeds for websites that don't have one.
- *
- * For the full license information, please view the UNLICENSE file distributed
- * with this source code.
- *
- * @package Core
- * @license http://unlicense.org/ UNLICENSE
- * @link    https://github.com/rss-bridge/rss-bridge
- */
-
 class DetectAction implements ActionInterface
 {
     public function execute(array $request)
     {
-        $targetURL = $request['url']
-            or returnClientError('You must specify a url!');
+        $targetURL = $request['url'] ?? null;
+        $format = $request['format'] ?? null;
 
-        $format = $request['format']
-            or returnClientError('You must specify a format!');
+        if (!$targetURL) {
+            throw new \Exception('You must specify a url!');
+        }
+        if (!$format) {
+            throw new \Exception('You must specify a format!');
+        }
 
-        $bridgeFactory = new \BridgeFactory();
+        $bridgeFactory = new BridgeFactory();
 
         foreach ($bridgeFactory->getBridgeClassNames() as $bridgeClassName) {
-            if (!$bridgeFactory->isWhitelisted($bridgeClassName)) {
+            if (!$bridgeFactory->isEnabled($bridgeClassName)) {
                 continue;
             }
 
             $bridge = $bridgeFactory->create($bridgeClassName);
-
-            if ($bridge === false) {
-                continue;
-            }
 
             $bridgeParams = $bridge->detectParameters($targetURL);
 
@@ -44,10 +32,10 @@ class DetectAction implements ActionInterface
             $bridgeParams['bridge'] = $bridgeClassName;
             $bridgeParams['format'] = $format;
 
-            header('Location: ?action=display&' . http_build_query($bridgeParams), true, 301);
-            exit;
+            $url = '?action=display&' . http_build_query($bridgeParams);
+            return new Response('', 301, ['location' => $url]);
         }
 
-        returnClientError('No bridge found for given URL: ' . $targetURL);
+        throw new \Exception('No bridge found for given URL: ' . $targetURL);
     }
 }

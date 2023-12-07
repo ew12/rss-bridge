@@ -12,19 +12,19 @@ class CommonDreamsBridge extends FeedExpander
         $this->collectExpandableDatas('http://www.commondreams.org/rss.xml', 10);
     }
 
-    protected function parseItem($newsItem)
+    protected function parseItem(array $item)
     {
-        $item = parent::parseItem($newsItem);
         $item['content'] = $this->extractContent($item['uri']);
         return $item;
     }
 
     private function extractContent($url)
     {
-        $html3 = getSimpleHTMLDOMCached($url);
-        $text = $html3->find('div[class=field--type-text-with-summary]', 0)->innertext;
-        $html3->clear();
-        unset($html3);
+        $dom = getSimpleHTMLDOMCached($url);
+        $summary = $dom->find('div.node__body', 0);
+        $text = $summary->innertext;
+        $dom->clear();
+        unset($dom);
         return $text;
     }
 }

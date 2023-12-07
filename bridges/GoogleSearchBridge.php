@@ -5,7 +5,7 @@ class GoogleSearchBridge extends BridgeAbstract
     const MAINTAINER = 'sebsauvage';
     const NAME = 'Google search';
     const URI = 'https://www.google.com/';
-    const CACHE_TIMEOUT = 1800; // 30min
+    const CACHE_TIMEOUT = 60 * 30; // 30m
     const DESCRIPTION = 'Returns max 100 results from the past year.';
 
     const PARAMETERS = [[
@@ -23,6 +23,7 @@ class GoogleSearchBridge extends BridgeAbstract
 
     public function collectData()
     {
+        // todo: wrap this in try..catch because 429 too many requests happens a lot
         $dom = getSimpleHTMLDOM($this->getURI(), ['Accept-language: en-US']);
         if (!$dom) {
             returnServerError('No results for this query.');

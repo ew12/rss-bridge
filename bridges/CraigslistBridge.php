@@ -63,7 +63,7 @@ class CraigslistBridge extends BridgeAbstract
         $html = getSimpleHTMLDOM($uri);
 
         // Check if no results page is shown (nearby results)
-        if ($html->find('.displaycountShow', 0)->plaintext == '0') {
+        if (($html->find('.displaycountShow', 0)->plaintext ?? '') == '0') {
             return;
         }
 
@@ -89,9 +89,11 @@ class CraigslistBridge extends BridgeAbstract
             $item['title'] = $heading->plaintext;
             $item['timestamp'] = $post->find('.result-date', 0)->datetime;
             $item['uid'] = $heading->id;
-            $item['content'] = $post->find('.result-price', 0)->plaintext . ' '
-                             // Find the location (local and nearby results if searchNearby=1)
-                             . $post->find('.result-hood, span.nearby', 0)->plaintext;
+
+            $price = $post->find('.result-price', 0)->plaintext ?? '';
+            // Find the location (local and nearby results if searchNearby=1)
+            $nearby = $post->find('.result-hood, span.nearby', 0)->plaintext ?? '';
+            $item['content'] = sprintf('%s %s', $price, $nearby);
 
             $images = $post->find('.result-image[data-ids]', 0);
             if (!is_null($images)) {

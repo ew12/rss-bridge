@@ -6,9 +6,17 @@ class PicukiBridge extends BridgeAbstract
     const NAME = 'Picuki Bridge';
     const URI = 'https://www.picuki.com/';
     const CACHE_TIMEOUT = 3600; // 1h
-    const DESCRIPTION = 'Returns Picuki posts by user and by hashtag';
+    const DESCRIPTION = 'Returns Picuki (Instagram viewer) posts by user and by hashtag';
 
     const PARAMETERS = [
+        'global' => [
+            'count' => [
+                'name' => 'Count',
+                'type' => 'number',
+                'title' => 'How many posts to fetch',
+                'defaultValue' => 12
+            ]
+        ],
         'Username' => [
             'u' => [
                 'name' => 'username',
@@ -40,8 +48,16 @@ class PicukiBridge extends BridgeAbstract
 
     public function collectData()
     {
+        $re = '#let short_code = "(.*?)";\s*$#m';
         $html = getSimpleHTMLDOM($this->getURI());
 
+        $requestedCount = $this->getInput('count');
+        if ($requestedCount > 12) {
+            // Picuki shows 12 posts per page at initial load.
+            throw new \Exception('Maximum count is 12');
+        }
+
+        $count = 0;
         foreach ($html->find('.box-photos .box-photo') as $element) {
             // skip ad items
             if (in_array('adv', explode(' ', $element->class))) {
@@ -49,6 +65,11 @@ class PicukiBridge extends BridgeAbstract
             }
 
             $url = urljoin(self::URI, $element->find('a', 0)->href);
+            $html = getSimpleHTMLDOMCached($url);
+            $sourceUrl = null;
+            if (preg_match($re, $html, $matches) > 0) {
+                $sourceUrl = 'https://instagram.com/p/' . $matches[1];
+            }
 
             $author = trim($element->find('.user-nickname', 0)->plaintext);
 
@@ -77,15 +98,22 @@ class PicukiBridge extends BridgeAbstract
                 'timestamp'  => date_format($date, 'r'),
                 'title'      => strlen($description) > 60 ? mb_substr($description, 0, 57) . '...' : $description,
                 'thumbnail'  => $imageUrl,
+                'source'     => $sourceUrl,
                 'enclosures' => [$imageUrl],
                 'content'    => <<<HTML
-<a href="{$url}">
-	<img loading="lazy" src="{$imageUrl}" />
-</a>
-{$videoNote}
-<p>{$description}<p>
-HTML
+                    <a href="{$url}">
+                        <img loading="lazy" src="{$imageUrl}" />
+                    </a>
+                    <a href="{$sourceUrl}">{$sourceUrl}</a>
+                    {$videoNote}
+                    <p>{$description}<p>
+                    HTML
             ];
+
+            $count++;
+            if ($count >= $requestedCount) {
+                break;
+            }
         }
     }
 

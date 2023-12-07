@@ -4,7 +4,6 @@ class Arte7Bridge extends BridgeAbstract
 {
     const NAME = 'Arte +7';
     const URI = 'https://www.arte.tv/';
-    const MAINTAINER = 'imagoiq';
     const CACHE_TIMEOUT = 1800; // 30min
     const DESCRIPTION = 'Returns newest videos from ARTE +7';
 
@@ -156,6 +155,10 @@ class Arte7Bridge extends BridgeAbstract
             . '"><img src="'
             . $element['mainImage']['url']
             . '" /></a>';
+
+            $item['itunes'] = [
+                'duration' => $durationSeconds,
+            ];
 
             $this->items[] = $item;
         }

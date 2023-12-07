@@ -170,10 +170,8 @@ class NationalGeographicBridge extends BridgeAbstract
         $image = $story['img'];
         $item['enclosures'][] = $image['src'];
 
-        $tags = $story['tags'];
-        foreach ($tags as $tag) {
-            $tag_name = $tag['name'];
-            $item['categories'][] = $tag_name;
+        foreach ($story['tags'] as $tag) {
+            $item['categories'][] = $tag['name'] ?? $tag;
         }
 
         $this->items[] = $item;
@@ -321,7 +319,7 @@ EOD;
                             $content .= $module['note'];
                             break;
                         case 'listicle':
-                            $content .= '<h2>' . $module['title'] . '</h2>';
+                            $content .= '<h2>' . ($module['title'] ?? '(no title)') . '</h2>';
                             if (isset($module['image'])) {
                                 $content .= $this->handleImages($module['image'], $module['image']['cmsType']);
                             }

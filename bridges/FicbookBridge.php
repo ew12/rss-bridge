@@ -135,8 +135,8 @@ class FicbookBridge extends BridgeAbstract
             ];
 
             if ($this->getInput('include_contents')) {
-                $content = getSimpleHTMLDOMCached($item['uri']);
-                $item['content'] = $content->find('#content', 0);
+                $content = getSimpleHTMLDOMCached($item['uri'], 86400, [], [], true, true, DEFAULT_TARGET_CHARSET, false);
+                $item['content'] = str_replace("\n", '<br>', $content->find('#content', 0)->innertext);
             }
 
             $this->items[] = $item;
@@ -184,6 +184,7 @@ class FicbookBridge extends BridgeAbstract
         ];
 
         $fixed_date = str_replace($ru_month, $en_month, $date);
+        $fixed_date = str_replace(' г.', '', $fixed_date);
 
         if ($fixed_date === $date) {
             Debug::log('Unable to fix date: ' . $date);

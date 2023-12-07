@@ -603,10 +603,10 @@ class GithubTrendingBridge extends BridgeAbstract
             $item = [];
 
             // URI
-            $item['uri'] = self::URI_ITEM . $element->find('h1 a', 0)->href;
+            $item['uri'] = self::URI_ITEM . $element->find('h2 a', 0)->href;
 
             // Title
-            $item['title'] = str_replace('  ', '', trim(strip_tags($element->find('h1 a', 0)->plaintext)));
+            $item['title'] = str_replace('  ', '', trim(strip_tags($element->find('h2 a', 0)->plaintext)));
 
             // Description
             $description = $element->find('p', 0);
@@ -625,8 +625,7 @@ class GithubTrendingBridge extends BridgeAbstract
     public function getName()
     {
         if (!is_null($this->getInput('language'))) {
-            $language = array_search($this->getInput('language'), self::PARAMETERS['By language']['language']['values']);
-            return self::NAME . ': ' . $language;
+            return self::NAME . ': ' . $this->getKey('language');
         }
 
         return parent::getName();

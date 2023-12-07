@@ -1,53 +1,61 @@
 <?php
 
-require_once __DIR__ . '/lib/rssbridge.php';
+if (version_compare(\PHP_VERSION, '7.4.0') === -1) {
+    exit('RSS-Bridge requires minimum PHP version 7.4.0!');
+}
+
+require_once __DIR__ . '/lib/bootstrap.php';
 
 Configuration::verifyInstallation();
-Configuration::loadConfiguration();
-Authentication::showPromptIfNeeded();
+$customConfig = [];
+if (file_exists(__DIR__ . '/config.ini.php')) {
+    $customConfig = parse_ini_file(__DIR__ . '/config.ini.php', true, INI_SCANNER_TYPED);
+}
+Configuration::loadConfiguration($customConfig, getenv());
 
-try {
-    if (isset($argv)) {
-        parse_str(implode('&', array_slice($argv, 1)), $cliArgs);
-        $request = $cliArgs;
-    } else {
-        $request = $_GET;
+// Consider: ini_set('error_reporting', E_ALL & ~E_DEPRECATED);
+date_default_timezone_set(Configuration::getConfig('system', 'timezone'));
+
+$rssBridge = new RssBridge();
+
+set_exception_handler(function (\Throwable $e) {
+    http_response_code(500);
+    print render(__DIR__ . '/templates/exception.html.php', ['e' => $e]);
+    RssBridge::getLogger()->error('Uncaught Exception', ['e' => $e]);
+    exit(1);
+});
+
+set_error_handler(function ($code, $message, $file, $line) {
+    if ((error_reporting() & $code) === 0) {
+        return false;
     }
-    foreach ($request as $key => $value) {
-        if (! is_string($value)) {
-            http_response_code(400);
-            print render('error.html.php', [
-                'title' => '400 Bad Request',
-                'message' => "Query parameter \"$key\" is not a string.",
-            ]);
-            exit(1);
+    // In the future, uncomment this:
+    //throw new \ErrorException($message, 0, $code, $file, $line);
+    $text = sprintf(
+        '%s at %s line %s',
+        sanitize_root($message),
+        sanitize_root($file),
+        $line
+    );
+    RssBridge::getLogger()->warning($text);
+});
+
+// There might be some fatal errors which are not caught by set_error_handler() or \Throwable.
+register_shutdown_function(function () {
+    $error = error_get_last();
+    if ($error) {
+        $message = sprintf(
+            '(shutdown) %s: %s in %s line %s',
+            $error['type'],
+            sanitize_root($error['message']),
+            sanitize_root($error['file']),
+            $error['line']
+        );
+        RssBridge::getLogger()->error($message);
+        if (Debug::isEnabled()) {
+            print sprintf("<pre>%s</pre>\n", e($message));
         }
     }
+});
 
-    $actionFactory = new ActionFactory();
-
-    if (array_key_exists('action', $request)) {
-        $action = $actionFactory->create($request['action']);
-
-        $action->execute($request);
-    } else {
-        $showInactive = filter_input(INPUT_GET, 'show_inactive', FILTER_VALIDATE_BOOLEAN);
-        echo BridgeList::create($showInactive);
-    }
-} catch (\Throwable $e) {
-    error_log($e);
-
-    $message = sprintf(
-        'Uncaught Exception %s: %s at %s line %s',
-        get_class($e),
-        $e->getMessage(),
-        trim_path_prefix($e->getFile()),
-        $e->getLine()
-    );
-
-    http_response_code(500);
-    print render('error.html.php', [
-        'message' => $message,
-        'stacktrace' => create_sane_stacktrace($e),
-    ]);
-}
+$rssBridge->main($argv ?? []);

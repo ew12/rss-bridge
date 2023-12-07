@@ -22,14 +22,19 @@ class VkBridge extends BridgeAbstract
             ]
         ]
     ];
+    const TEST_DETECT_PARAMETERS = [
+        'https://vk.com/id1' => ['u' => 'id1'],
+        'https://vk.com/groupname' => ['u' => 'groupname'],
+        'https://m.vk.com/groupname' => ['u' => 'groupname'],
+        'https://vk.com/groupname/anythingelse' => ['u' => 'groupname'],
+        'https://vk.com/groupname?w=somethingelse' => ['u' => 'groupname'],
+        'https://vk.com/with_underscore' => ['u' => 'with_underscore'],
+        'https://vk.com/vk.cats' => ['u' => 'vk.cats'],
+    ];
 
-    protected $videos = [];
     protected $pageName;
-
-    protected function getAccessToken()
-    {
-        return 'e69b2db9f6cd4a97c0716893232587165c18be85bc1af1834560125c1d3c8ec281eb407a78cca0ae16776';
-    }
+    protected $tz = 0;
+    private $urlRegex = '/vk\.com\/([\w.]+)/';
 
     public function getURI()
     {
@@ -49,23 +54,41 @@ class VkBridge extends BridgeAbstract
         return parent::getName();
     }
 
+    public function detectParameters($url)
+    {
+        if (preg_match($this->urlRegex, $url, $matches)) {
+            return ['u' => $matches[1]];
+        }
+
+        return null;
+    }
+
     public function collectData()
     {
         $text_html = $this->getContents();
 
         $text_html = iconv('windows-1251', 'utf-8//ignore', $text_html);
-        // makes album link generating work correctly
-        $text_html = str_replace('"class="page_album_link">', '" class="page_album_link">', $text_html);
+
         $html = str_get_html($text_html);
-        $pageName = $html->find('.page_name', 0);
+        foreach ($html->find('script') as $script) {
+            preg_match('/tz: ([0-9]+)/', $script->outertext, $matches);
+            if (count($matches) > 0) {
+                $this->tz = intval($matches[1]);
+                break;
+            }
+        }
+        $pageName = $html->find('meta[property="og:title"]', 0);
         if (is_object($pageName)) {
-            $pageName = $pageName->plaintext;
-            $this->pageName = htmlspecialchars_decode($pageName);
+            $pageName = $pageName->getAttribute('content');
+            $this->pageName = $pageName;
         }
         foreach ($html->find('div.replies') as $comment_block) {
             $comment_block->outertext = '';
         }
-        $html->load($html->save());
+
+        // expensive operation
+        $save = $html->save();
+        $html->load($save);
 
         $pinned_post_item = null;
         $last_post_id = 0;
@@ -78,16 +101,14 @@ class VkBridge extends BridgeAbstract
 
             defaultLinkTo($post, self::URI);
 
-            $post_videos = [];
-
             $is_pinned_post = false;
             if (strpos($post->getAttribute('class'), 'post_fixed') !== false) {
                 $is_pinned_post = true;
             }
 
-            if (is_object($post->find('a.wall_post_more', 0))) {
-                //delete link "show full" in content
-                $post->find('a.wall_post_more', 0)->outertext = '';
+            // Remove 'Show more' button
+            foreach ($post->find('button.PostTextMore') as $junk) {
+                $junk->outertext = '';
             }
 
             $content_suffix = '';
@@ -138,8 +159,8 @@ class VkBridge extends BridgeAbstract
                     $article_author_selector = 'div.article_snippet__author';
                     $article_thumb_selector = 'div.article_snippet__image';
                 }
-                $article_title = $article->find($article_title_selector, 0)->innertext;
-                $article_author = $article->find($article_author_selector, 0)->innertext;
+                $article_title = $article->find($article_title_selector, 0)->innertext ?? '';
+                $article_author = $article->find($article_author_selector, 0)->innertext ?? '';
                 $article_link = $article->getAttribute('href');
                 $article_img_element_style = $article->find($article_thumb_selector, 0)->getAttribute('style');
                 preg_match('/background-image: url\((.*)\)/', $article_img_element_style, $matches);
@@ -150,24 +171,15 @@ class VkBridge extends BridgeAbstract
                 $article->outertext = '';
             }
 
-            // get video on post
-            $video = $post->find('div.post_video_desc', 0);
-            $main_video_link = '';
-            if (is_object($video)) {
-                $video_title = $video->find('div.post_video_title', 0)->plaintext;
-                $video_link = $video->find('a.lnk', 0)->getAttribute('href');
-                $this->appendVideo($video_title, $video_link, $content_suffix, $post_videos);
-                $video->outertext = '';
-                $main_video_link = $video_link;
-            }
-
-            // get all other videos
+            // get all videos
             foreach ($post->find('a.page_post_thumb_video') as $a) {
                 $video_title = htmlspecialchars_decode($a->getAttribute('aria-label'));
-                $video_link = $a->getAttribute('href');
-                if ($video_link != $main_video_link) {
-                    $this->appendVideo($video_title, $video_link, $content_suffix, $post_videos);
+                $video_title_split_pos = strrpos($video_title, ' is ');
+                if ($video_title_split_pos !== false) {
+                    $video_title = substr($video_title, 0, $video_title_split_pos);
                 }
+                $video_link = $a->getAttribute('href');
+                $this->appendVideo($video_title, $video_link, backgroundToImg($a), $content_suffix);
                 $a->outertext = '';
             }
 
@@ -303,20 +315,89 @@ class VkBridge extends BridgeAbstract
                 $copy_quote->outertext = "<br>Reposted ($copy_quote_author): <br>$copy_quote_content";
             }
 
+            foreach ($post->find('.PrimaryAttachment .PhotoPrimaryAttachment') as $pa) {
+                $img = $pa->find('.PhotoPrimaryAttachment__imageElement', 0);
+                if (is_object($img)) {
+                    $pa->outertext = $img->outertext;
+                }
+            }
+
+            foreach ($post->find('.SecondaryAttachment') as $sa) {
+                $sa_href = $sa->getAttribute('href');
+                if (!$sa_href) {
+                    $sa_href = '';
+                }
+                $sa_task_click = $sa->getAttribute('data-task-click');
+
+                if (str_starts_with($sa_href, 'https://vk.com/doc')) {
+                    // document
+                    $doc_title = $sa->find('.SecondaryAttachment__childrenText', 0)->innertext;
+                    $doc_size = $sa->find('.SecondaryAttachmentSubhead', 0)->innertext;
+                    $doc_link = $sa_href;
+                    $content_suffix .= "<br>Doc: <a href='$doc_link'>$doc_title</a> ($doc_size)";
+                    $sa->outertext = '';
+                } else if (str_starts_with($sa_href, 'https://vk.com/@')) {
+                    // article
+                    $article_title = $sa->find('.SecondaryAttachment__childrenText', 0)->innertext;
+                    $article_author = explode('Article · from ', $sa->find('.SecondaryAttachmentSubhead', 0)->innertext)[1];
+                    $article_link = $sa_href;
+                    $content_suffix .= "<br>Article: <a href='$article_link'>$article_title ($article_author)</a>";
+                    $sa->outertext = '';
+                } else if ($sa_task_click == 'SecondaryAttachment/playAudio') {
+                    // audio
+                    $audio_json = json_decode(html_entity_decode($sa->getAttribute('data-audio')));
+                    $audio_link = $audio_json->url;
+                    $audio_title = $sa->find('.SecondaryAttachment__childrenText', 0)->innertext;
+                    $audio_author = $sa->find('.SecondaryAttachmentSubhead', 0)->innertext;
+                    $content_suffix .= "<br>Audio: <a href='$audio_link'>$audio_title ($audio_author)</a>";
+                    $sa->outertext = '';
+                } else if ($sa_task_click == 'SecondaryAttachment/playPlaylist') {
+                    // playlist link
+                    $playlist_title = $sa->find('.SecondaryAttachment__childrenText', 0)->innertext;
+                    $playlist_link = $sa->find('.SecondaryAttachment__link', 0)->getAttribute('href');
+                    $content_suffix .= "<br>Playlist: <a href='$playlist_link'>$playlist_title</a>";
+                    $sa->outertext = '';
+                }
+            }
+
             $item = [];
-            $item['content'] = strip_tags(backgroundToImg($post->find('div.wall_text', 0)->innertext), '<a><br><img>');
-            $item['content'] .= $content_suffix;
+            $content = strip_tags(backgroundToImg($post->find('div.wall_text', 0)->innertext), '<a><br><img>');
+            $content .= $content_suffix;
+            if (!$content) {
+                $content = '(empty post)';
+            }
+            $content = str_get_html($content);
+            foreach ($content->find('img') as $img) {
+                $parsed_src = parse_url($img->getAttribute('src'));
+
+                // unblur images (case of impf)
+                // get original images instead of thumbnails (case of impg)
+                $imgPrefix = array_reduce(['/impf/', '/impg/'], function ($a, $c) use ($parsed_src) {
+                    if ($a) {
+                        return $a;
+                    }
+                    if (str_starts_with($parsed_src['path'], $c)) {
+                        return $c;
+                    }
+                    return $a;
+                }, '');
+                if ($imgPrefix) {
+                    $new_src = $parsed_src['scheme'] . '://' . $parsed_src['host'];
+                    $new_src .= substr($parsed_src['path'], strlen($imgPrefix) - 1);
+                    $img->setAttribute('src', $new_src);
+                }
+            }
+            $item['content'] = $content->outertext;
             $item['categories'] = $hashtags;
 
             // get post link
-            $post_link = $post->find('a.post_link', 0)->getAttribute('href');
+            $post_link = $post->find('a.PostHeaderSubtitle__link', 0)->getAttribute('href');
             preg_match('/wall-?\d+_(\d+)/', $post_link, $preg_match_result);
             $item['post_id'] = intval($preg_match_result[1]);
             $item['uri'] = $post_link;
             $item['timestamp'] = $this->getTime($post);
             $item['title'] = $this->getTitle($item['content']);
             $item['author'] = $post_author;
-            $item['videos'] = $post_videos;
             if ($is_pinned_post) {
                 // do not append it now
                 $pinned_post_item = $item;
@@ -336,8 +417,6 @@ class VkBridge extends BridgeAbstract
                 });
             }
         }
-
-        $this->getCleanVideoLinks();
     }
 
     private function getPhoto($a)
@@ -374,13 +453,15 @@ class VkBridge extends BridgeAbstract
         if ($original) {
             return "<a href='$original'><img src='$thumb'></a>";
         } else {
-            return "<img src='$thumb'>";
+            return backgroundToImg($a);
         }
     }
 
     private function getTitle($content)
     {
-        preg_match('/^["\w\ \p{L}\(\)\?#«»-]+/mu', htmlspecialchars_decode($content), $result);
+        $content = explode('<br>', $content)[0];
+        $content = strip_tags($content);
+        preg_match('/^[:\,"\w\ \p{L}\(\)\?#«»\-\–\—||&\.%\\₽\/+\;\!]+/mu', htmlspecialchars_decode($content), $result);
         if (count($result) == 0) {
             return 'untitled';
         }
@@ -389,10 +470,11 @@ class VkBridge extends BridgeAbstract
 
     private function getTime($post)
     {
-        if ($time = $post->find('span.rel_date', 0)->getAttribute('time')) {
-            return $time;
+        $accurateDateElement = $post->find('span.rel_date', 0);
+        if ($accurateDateElement) {
+            return $accurateDateElement->getAttribute('time');
         } else {
-            $strdate = $post->find('span.rel_date', 0)->plaintext;
+            $strdate = $post->find('time.PostHeaderSubtitle__item', 0)->plaintext;
             $strdate = preg_replace('/[\x00-\x1F\x7F-\xFF]/', ' ', $strdate);
 
             $date = date_parse($strdate);
@@ -413,65 +495,50 @@ class VkBridge extends BridgeAbstract
                 $date['hour'] = $date['minute'] = '00';
             }
             return strtotime($date['day'] . '-' . $date['month'] . '-' . $date['year'] . ' ' .
-                $date['hour'] . ':' . $date['minute']);
+                $date['hour'] . ':' . $date['minute']) - $this->tz;
         }
     }
 
     private function getContents()
     {
-        $header = ['Accept-language: en', 'Cookie: remixlang=3'];
+        $httpHeaders = [
+            'Accept-language: en',
+            'Cookie: remixlang=3',
+        ];
+        $redirects = 0;
+        $uri = $this->getURI();
 
-        return getContents($this->getURI(), $header);
+        while ($redirects < 2) {
+            $response = getContents($uri, $httpHeaders, [CURLOPT_FOLLOWLOCATION => false], true);
+
+            if (in_array($response['code'], [200, 304])) {
+                return $response['content'];
+            }
+
+            $headers = $response['headers'];
+            $uri = urljoin(self::URI, $headers['location'][0]);
+
+            if (str_contains($uri, '/429.html')) {
+                returnServerError('VK responded "Too many requests"');
+            }
+
+            if (!preg_match('#^https?://vk.com/#', $uri)) {
+                returnServerError('Unexpected redirect location');
+            }
+
+            $redirects++;
+        }
+
+        returnServerError('Too many redirects, while retreving content from VK');
     }
 
-    protected function appendVideo($video_title, $video_link, &$content_suffix, array &$post_videos)
+    protected function appendVideo($video_title, $video_link, $previewImg, &$content_suffix)
     {
         if (!$video_title) {
             $video_title = '(empty)';
         }
 
-        preg_match('/video([0-9-]+_[0-9]+)/', $video_link, $preg_match_result);
-
-        if (count($preg_match_result) > 1) {
-            $video_id = $preg_match_result[1];
-            $this->videos[ $video_id ] = [
-                'url' => $video_link,
-                'title' => $video_title,
-            ];
-            $post_videos[] = $video_id;
-        } else {
-            $content_suffix .= '<br>Video: <a href="' . htmlspecialchars($video_link) . '">' . $video_title . '</a>';
-        }
-    }
-
-    protected function getCleanVideoLinks()
-    {
-        $result = $this->api('video.get', [
-            'videos' => implode(',', array_keys($this->videos)),
-            'count' => 200
-        ]);
-
-        if (!isset($result['error'])) {
-            foreach ($result['response']['items'] as $item) {
-                $video_id = strval($item['owner_id']) . '_' . strval($item['id']);
-                $this->videos[$video_id]['url'] = $item['player'];
-            }
-        }
-
-        foreach ($this->items as &$item) {
-            foreach ($item['videos'] as $video_id) {
-                $video_link = $this->videos[$video_id]['url'];
-                $video_title = $this->videos[$video_id]['title'];
-                $item['content'] .= '<br>Video: <a href="' . htmlspecialchars($video_link) . '">' . $video_title . '</a>';
-            }
-            unset($item['videos']);
-        }
-    }
-
-    protected function api($method, array $params)
-    {
-        $params['v'] = '5.80';
-        $params['access_token'] = $this->getAccessToken();
-        return json_decode(getContents('https://api.vk.com/method/' . $method . '?' . http_build_query($params)), true);
+        $content_suffix .= '<br><a href="' . htmlspecialchars($video_link) . '">' . $previewImg;
+        $content_suffix .= 'Video: ' . $video_title . '</a>';
     }
 }

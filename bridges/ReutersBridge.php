@@ -144,18 +144,6 @@ class ReutersBridge extends BridgeAbstract
     ];
 
     /**
-     * Performs an HTTP request to the Reuters API and returns decoded JSON
-     * in the form of an associative array
-     * @param string $feed_uri Full API URL to fetch data
-     * @return array
-     */
-    private function getJson($uri)
-    {
-        $returned_data = getContents($uri);
-        return json_decode($returned_data, true);
-    }
-
-    /**
      * Takes in data from Reuters Wire API and
      * creates structured data in the form of a list
      * of story information.
@@ -295,12 +283,19 @@ class ReutersBridge extends BridgeAbstract
     {
         // This will make another request to API to get full detail of article and author's name.
         $url = $this->getAPIURL($feed_uri, 'article', $is_article_uid);
-        $rawData = $this->getJson($url);
 
-        if (json_last_error() != JSON_ERROR_NONE) { // Checking whether a valid JSON or not
-            return $this->handleRedirectedArticle($url);
+        try {
+            $json = getContents($url);
+            $rawData = Json::decode($json);
+        } catch (\JsonException $e) {
+            return [
+                'content' => '',
+                'author' => '',
+                'category' => '',
+                'images' => '',
+                'published_at' => ''
+            ];
         }
-
         $article_content = '';
         $authorlist = '';
         $category = [];
@@ -342,54 +337,16 @@ class ReutersBridge extends BridgeAbstract
         return $content_detail;
     }
 
-    private function handleRedirectedArticle($url)
-    {
-        $html = getSimpleHTMLDOMCached($url, 86400); // Duration 24h
-
-        $description = '';
-        $author = '';
-        $images = '';
-        $meta_items = $html->find('meta');
-        foreach ($meta_items as $meta) {
-            switch ($meta->name) {
-                case 'description':
-                    $description = $meta->content;
-                    break;
-                case 'author':
-                case 'twitter:creator':
-                    $author = $meta->content;
-                    break;
-                case 'twitter:image:src':
-                case 'twitter:image':
-                    $url = $meta->content;
-                    $images = "<img src=$url" . '>';
-                    break;
-            }
-        }
-
-        return [
-            'content' => $description,
-            'author' => $author,
-            'category' => '',
-            'images' => $images,
-            'published_at' => '',
-            'status' => 'redirected'
-        ];
-    }
-
     private function handleImage($images)
     {
         $img_placeholder = '';
 
-        foreach ($images as $image) { // Add more image to article.
+        foreach ($images as $image) {
+            // Add more image to article.
             $image_url = $image['url'];
-            $image_caption = $image['caption'];
+            $image_caption = $image['caption'] ?? $image['alt_text'] ?? $image['subtitle'] ?? '';
             $image_alt_text = '';
-            if (isset($image['alt_text'])) {
-                $image_alt_text = $image['alt_text'];
-            } else {
-                $image_alt_text = $image_caption;
-            }
+            $image_alt_text = $image['alt_text'] ?? $image_caption;
             $img = "<img src=\"$image_url\" alt=\"$image_alt_text\">";
             $img_caption = "<figcaption style=\"text-align: center;\"><i>$image_caption</i></figcaption>";
             $figure = "<figure>$img \t $img_caption</figure>";
@@ -420,7 +377,7 @@ class ReutersBridge extends BridgeAbstract
     {
         $description = '';
         foreach ($contents as $content) {
-            $data;
+            $data = '';
             if (isset($content['content'])) {
                 $data = $content['content'];
             }
@@ -498,15 +455,21 @@ EOD;
                     break;
                 case 'table':
                     $table = '<table>';
-                    $theaders = $content['header'];
-                    $tr = '<tr>';
-                    foreach ($theaders as $header) {
-                        $tr .= '<th>' . $header . '</th>';
+                    $theaders = $content['header'] ?? null;
+                    if ($theaders) {
+                        $tr = '<tr>';
+                        foreach ($theaders as $header) {
+                            $tr .= '<th>' . $header . '</th>';
+                        }
+                        $tr .= '</tr>';
+                        $table .= $tr;
                     }
-                    $tr .= '</tr>';
-                    $table .= $tr;
                     $rows = $content['rows'];
                     foreach ($rows as $row) {
+                        if (!is_array($row)) {
+                            // some rows are null
+                            continue;
+                        }
                         $tr = '<tr>';
                         foreach ($row as $data) {
                             $tr .= '<td>' . $data . '</td>';
@@ -525,28 +488,6 @@ EOD;
         return $description;
     }
 
-    /**
-     * @param array $stories
-     */
-    private function addRelatedStories($stories)
-    {
-        foreach ($stories as $story) {
-            $story_data = $this->getArticle($story['url']);
-            $title = $story['caption'];
-            $url = self::URI . $story['url'];
-            if (isset($story_data['status']) && $story_data['status'] != 'redirected') {
-                $article_body = defaultLinkTo($story_data['content'], $this->getURI());
-            } else {
-                $article_body = $story_data['content'];
-            }
-            $content = $article_body . $story_data['images'];
-            $timestamp = $story_data['published_at'];
-            $category = $story_data['category'];
-            $author = $story_data['author'];
-            $this->addStories($title, $content, $timestamp, $author, $url, $category);
-        }
-    }
-
     public function getName()
     {
         return $this->feedName;
@@ -556,7 +497,8 @@ EOD;
     {
         $endpoint = $this->getSectionEndpoint();
         $url = $this->getAPIURL($endpoint, 'section');
-        $data = $this->getJson($url);
+        $json = getContents($url);
+        $data = Json::decode($json);
 
         $stories = [];
         $section_name = '';
@@ -604,22 +546,23 @@ EOD;
                 $title = $story['title'];
                 $article_uri = $story['canonical_url'];
                 $source_type = $story['source']['name'];
-                if (isset($story['related_stories'])) {
-                    $this->addRelatedStories($story['related_stories']);
-                }
             }
 
             // Some article cause unexpected behaviour like redirect to another site not API.
             // Attempt to check article source type to avoid this.
             if (!$this->useWireAPI && $source_type != 'Package') { // Only Reuters PF api have this, Wire don't.
-                $author = $this->handleAuthorName($story['authors']);
+                $author = $this->handleAuthorName($story['authors'] ?? []);
                 $timestamp = $story['published_time'];
                 $image_placeholder = '';
                 if (isset($story['thumbnail'])) {
                     $image_placeholder = $this->handleImage([$story['thumbnail']]);
                 }
                 $content = $story['description'] . $image_placeholder;
-                $category = [$story['primary_section']['name']];
+                if (isset($story['primary_section']['name'])) {
+                    $category = [$story['primary_section']['name']];
+                } else {
+                    $category = [];
+                }
             } else {
                 $content_detail = $this->getArticle($article_uri);
                 $description = $content_detail['content'];

@@ -1,151 +1,75 @@
 <?php
 
-/**
- * This file is part of RSS-Bridge, a PHP project capable of generating RSS and
- * Atom feeds for websites that don't have one.
- *
- * For the full license information, please view the UNLICENSE file distributed
- * with this source code.
- *
- * @package Core
- * @license https://unlicense.org/ UNLICENSE
- * @link    https://github.com/rss-bridge/rss-bridge
- */
-
-/**
- * An abstract class for format implementations
- *
- * This class implements {@see FormatInterface}
- */
-abstract class FormatAbstract implements FormatInterface
+abstract class FormatAbstract
 {
-    /** The default charset (UTF-8) */
-    const DEFAULT_CHARSET = 'UTF-8';
+    public const ITUNES_NS = 'http://www.itunes.com/dtds/podcast-1.0.dtd';
 
-    /** MIME type of format output */
     const MIME_TYPE = 'text/plain';
 
-    /** @var string $charset The charset */
-    protected $charset;
+    protected string $charset = 'UTF-8';
+    protected array $items = [];
+    protected int $lastModified;
+    protected array $extraInfos = [];
 
-    /** @var array $items The items */
-    protected $items;
+    abstract public function stringify();
 
-    /**
-     * @var int $lastModified A timestamp to indicate the last modified time of
-     * the output data.
-     */
-    protected $lastModified;
-
-    /** @var array $extraInfos The extra infos */
-    protected $extraInfos;
-
-    /** {@inheritdoc} */
-    public function getMimeType()
+    public function getMimeType(): string
     {
         return static::MIME_TYPE;
     }
 
-    /**
-     * {@inheritdoc}
-     *
-     * @param string $charset {@inheritdoc}
-     */
-    public function setCharset($charset)
+    public function setCharset(string $charset)
     {
         $this->charset = $charset;
-
-        return $this;
     }
 
-    /** {@inheritdoc} */
-    public function getCharset()
+    public function getCharset(): string
     {
-        $charset = $this->charset;
-
-        return is_null($charset) ? static::DEFAULT_CHARSET : $charset;
+        return $this->charset;
     }
 
-    /**
-     * Set the last modified time
-     *
-     * @param int $lastModified The last modified time
-     * @return void
-     */
-    public function setLastModified($lastModified)
+    public function setLastModified(int $lastModified)
     {
         $this->lastModified = $lastModified;
     }
 
     /**
-     * {@inheritdoc}
-     *
-     * @param array $items {@inheritdoc}
+     * @param FeedItem[] $items
      */
-    public function setItems(array $items)
+    public function setItems(array $items): void
     {
         $this->items = $items;
-
-        return $this;
     }
 
-    /** {@inheritdoc} */
-    public function getItems()
+    /**
+     * @return FeedItem[] The items
+     */
+    public function getItems(): array
     {
-        if (!is_array($this->items)) {
-            throw new \LogicException('Feed the ' . get_class($this) . ' with "setItems" method before !');
-        }
-
         return $this->items;
     }
 
-    /**
-     * {@inheritdoc}
-     *
-     * @param array $extraInfos {@inheritdoc}
-     */
-    public function setExtraInfos(array $extraInfos = [])
+    public function setExtraInfos(array $infos = [])
     {
-        foreach (['name', 'uri', 'icon', 'donationUri'] as $infoName) {
-            if (!isset($extraInfos[$infoName])) {
-                $extraInfos[$infoName] = '';
+        $extras = [
+            'name',
+            'uri',
+            'icon',
+            'donationUri',
+        ];
+        foreach ($extras as $extra) {
+            if (!isset($infos[$extra])) {
+                $infos[$extra] = '';
             }
         }
-
-        $this->extraInfos = $extraInfos;
-
-        return $this;
+        $this->extraInfos = $infos;
     }
 
-    /** {@inheritdoc} */
-    public function getExtraInfos()
+    public function getExtraInfos(): array
     {
-        if (is_null($this->extraInfos)) { // No extra info ?
-            $this->setExtraInfos(); // Define with default value
+        if (!$this->extraInfos) {
+            $this->setExtraInfos();
         }
-
         return $this->extraInfos;
-    }
-
-    /**
-     * Sanitize HTML while leaving it functional.
-     *
-     * Keeps HTML as-is (with clickable hyperlinks) while reducing annoying and
-     * potentially dangerous things.
-     *
-     * @param string $html The HTML content
-     * @return string The sanitized HTML content
-     *
-     * @todo This belongs into `html.php`
-     * @todo Maybe switch to http://htmlpurifier.org/
-     * @todo Maybe switch to http://www.bioinformatics.org/phplabware/internal_utilities/htmLawed/index.php
-     */
-    protected function sanitizeHtml(string $html): string
-    {
-        $html = str_replace('<script', '<&zwnj;script', $html); // Disable scripts, but leave them visible.
-        $html = str_replace('<iframe', '<&zwnj;iframe', $html);
-        $html = str_replace('<link', '<&zwnj;link', $html);
-        // We leave alone object and embed so that videos can play in RSS readers.
-        return $html;
     }
 }

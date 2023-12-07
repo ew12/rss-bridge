@@ -9,23 +9,36 @@ use PHPUnit\Framework\TestCase;
 
 final class ConfigurationTest extends TestCase
 {
-    public function test()
+    public function testValueFromDefaultConfig()
     {
-        putenv('RSSBRIDGE_system_timezone=Europe/Berlin');
         Configuration::loadConfiguration();
-
-        // test nonsense
         $this->assertSame(null, Configuration::getConfig('foobar', ''));
         $this->assertSame(null, Configuration::getConfig('foo', 'bar'));
+        $this->assertSame('baz', Configuration::getConfig('foo', 'bar', 'baz'));
         $this->assertSame(null, Configuration::getConfig('cache', ''));
+        $this->assertSame('UTC', Configuration::getConfig('system', 'timezone'));
+    }
 
-        // test value from env
+    public function testValueFromCustomConfig()
+    {
+        Configuration::loadConfiguration(['system' => ['timezone' => 'Europe/Berlin']]);
         $this->assertSame('Europe/Berlin', Configuration::getConfig('system', 'timezone'));
+    }
 
-        // test real values
-        $this->assertSame('file', Configuration::getConfig('cache', 'type'));
-        $this->assertSame(false, Configuration::getConfig('authentication', 'enable'));
-        $this->assertSame(true, Configuration::getConfig('admin', 'donations'));
-        $this->assertSame(1, Configuration::getConfig('error', 'report_limit'));
+    public function testValueFromEnv()
+    {
+        $env = [
+            'RSSBRIDGE_system_timezone' => 'Europe/Berlin',
+            'RSSBRIDGE_SYSTEM_MESSAGE' => 'hello',
+            'RSSBRIDGE_system_enabled_bridges' => 'TwitterBridge,GettrBridge',
+            'RSSBRIDGE_system_enable_debug_mode' => 'true',
+            'RSSBRIDGE_fileCache_path' => '/tmp/kek',
+        ];
+        Configuration::loadConfiguration([], $env);
+        $this->assertSame('Europe/Berlin', Configuration::getConfig('system', 'timezone'));
+        $this->assertSame('hello', Configuration::getConfig('system', 'message'));
+        $this->assertSame(true, Configuration::getConfig('system', 'enable_debug_mode'));
+        $this->assertSame('/tmp/kek', Configuration::getConfig('FileCache', 'path'));
+        $this->assertSame(['TwitterBridge', 'GettrBridge'], Configuration::getConfig('system', 'enabled_bridges'));
     }
 }

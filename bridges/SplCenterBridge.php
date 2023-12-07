@@ -21,10 +21,14 @@ class SplCenterBridge extends FeedExpander
 
     const CACHE_TIMEOUT = 3600; // 1 hour
 
-    protected function parseItem($item)
+    public function collectData()
     {
-        $item = parent::parseItem($item);
+        $url = $this->getURI() . '/rss.xml';
+        $this->collectExpandableDatas($url);
+    }
 
+    protected function parseItem(array $item)
+    {
         $articleHtml = getSimpleHTMLDOMCached($item['uri']);
 
         foreach ($articleHtml->find('.file') as $index => $media) {
@@ -35,11 +39,6 @@ class SplCenterBridge extends FeedExpander
         $item['enclosures'][] = $articleHtml->find('meta[name="twitter:image"]', 0)->content;
 
         return $item;
-    }
-
-    public function collectData()
-    {
-        $this->collectExpandableDatas($this->getURI() . '/rss.xml');
     }
 
     public function getURI()
@@ -54,11 +53,7 @@ class SplCenterBridge extends FeedExpander
     public function getName()
     {
         if (!is_null($this->getInput('content'))) {
-            $parameters = $this->getParameters();
-
-            $contentValues = array_flip($parameters[0]['content']['values']);
-
-            return $contentValues[$this->getInput('content')] . ' - Southern Poverty Law Center';
+            return $this->getKey('content') . ' - Southern Poverty Law Center';
         }
 
         return parent::getName();

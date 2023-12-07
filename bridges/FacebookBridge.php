@@ -88,6 +88,7 @@ class FacebookBridge extends BridgeAbstract
         // By profile
         $regex = '/^(https?:\/\/)?(www\.)?facebook\.com\/profile\.php\?id\=([^\/?&\n]+)?(.*)/';
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = 'User';
             $params['u'] = urldecode($matches[3]);
             return $params;
         }
@@ -95,6 +96,7 @@ class FacebookBridge extends BridgeAbstract
         // By group
         $regex = '/^(https?:\/\/)?(www\.)?facebook\.com\/groups\/([^\/?\n]+)?(.*)/';
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = 'Group';
             $params['g'] = urldecode($matches[3]);
             return $params;
         }
@@ -103,6 +105,7 @@ class FacebookBridge extends BridgeAbstract
         $regex = '/^(https?:\/\/)?(www\.)?facebook\.com\/([^\/?\n]+)/';
 
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = '';
             $params['u'] = urldecode($matches[3]);
             return $params;
         }
@@ -553,7 +556,8 @@ EOD;
                 $header = [];
             }
 
-            $html = getSimpleHTMLDOM($this->getURI(), $header);
+            $url = $this->getURI();
+            $html = getSimpleHTMLDOM($url, $header);
         }
 
         // Handle captcha form?
@@ -571,12 +575,16 @@ EOD;
             returnServerError('You must be logged in to view this page. This is not supported by RSS-Bridge.');
         }
 
-        $element = $html
-        ->find('#pagelet_timeline_main_column')[0]
-        ->children(0)
-        ->children(0)
-        ->next_sibling()
-        ->children(0);
+        $mainColumn = $html->find('#pagelet_timeline_main_column');
+        if (!$mainColumn) {
+            throw new \Exception(sprintf('Unable to find anything useful in %s', $url));
+        }
+
+        $element = $mainColumn[0]
+            ->children(0)
+            ->children(0)
+            ->next_sibling()
+            ->children(0);
 
         if (isset($element)) {
             $author = str_replace(' - Posts | Facebook', '', $html->find('title#pageTitle', 0)->innertext);

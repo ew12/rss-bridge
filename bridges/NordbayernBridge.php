@@ -14,28 +14,22 @@ class NordbayernBridge extends BridgeAbstract
             'exampleValue' => 'Nürnberg',
             'title' => 'Select a region',
             'values' => [
-                'Nürnberg' => 'nuernberg',
-                'Fürth' => 'fuerth',
-                'Erlangen' => 'erlangen',
-                'Altdorf' => 'altdorf',
                 'Ansbach' => 'ansbach',
-                'Bad Windsheim' => 'bad-windsheim',
                 'Bamberg' => 'bamberg',
-                'Dinkelsbühl/Feuchtwangen' => 'dinkelsbuehl-feuchtwangen',
-                'Feucht' => 'feucht',
+                'Bayreuth' => 'bayreuth',
+                'Erlangen' => 'erlangen',
                 'Forchheim' => 'forchheim',
+                'Fürth' => 'fuerth',
                 'Gunzenhausen' => 'gunzenhausen',
-                'Hersbruck' => 'hersbruck',
                 'Herzogenaurach' => 'herzogenaurach',
-                'Hilpoltstein' => 'hilpoltstein',
                 'Höchstadt' => 'hoechstadt',
-                'Lauf' => 'lauf',
                 'Neumarkt' => 'neumarkt',
-                'Neustadt/Aisch' => 'neustadt-aisch',
-                'Pegnitz' => 'pegnitz',
+                'Neustadt/Aisch-Bad Windsheim' => 'neustadt-aisch-bad-windsheim',
+                'Nürnberg' => 'nuernberg',
+                'Nürnberger Land' => 'nuernberger-land',
+                'Regensburg' => 'regensburg',
                 'Roth' => 'roth',
-                'Rothenburg o.d.T.' => 'rothenburg-o-d-t',
-                'Treuchtlingen' => 'treuchtlingen',
+                'Schwabach' => 'schwabach',
                 'Weißenburg' => 'weissenburg'
             ]
         ],
@@ -44,6 +38,18 @@ class NordbayernBridge extends BridgeAbstract
             'type' => 'checkbox',
             'exampleValue' => 'checked',
             'title' => 'Include Police Reports',
+        ],
+        'hideNNPlus' => [
+            'name' => 'Hide NN+ articles',
+            'type' => 'checkbox',
+            'exampleValue' => 'unchecked',
+            'title' => 'Hide all paywall articles on NN'
+        ],
+        'hideDPA' => [
+        'name' => 'Hide dpa articles',
+        'type' => 'checkbox',
+        'exampleValue' => 'unchecked',
+        'title' => 'Hide external articles from dpa'
         ]
     ]];
 
@@ -103,7 +109,7 @@ class NordbayernBridge extends BridgeAbstract
         return $teaser;
     }
 
-    private function handleArticle($link)
+    private function getArticle($link)
     {
         $item = [];
         $article = getSimpleHTMLDOM($link);
@@ -142,15 +148,9 @@ class NordbayernBridge extends BridgeAbstract
             $item['content'] .= self::getUseFullContent($content);
         }
 
-        // exclude police reports if desired
-        if (
-            $this->getInput('policeReports') ||
-            !str_contains($item['content'], 'Hier geht es zu allen aktuellen Polizeimeldungen.')
-        ) {
-            $this->items[] = $item;
-        }
 
         $article->clear();
+        return $item;
     }
 
     private function handleNewsblock($listSite)
@@ -159,7 +159,33 @@ class NordbayernBridge extends BridgeAbstract
         foreach ($main->find('article') as $article) {
             $url = $article->find('a', 0)->href;
             $url = urljoin(self::URI, $url);
-            self::handleArticle($url);
+            // exclude nn+ articles if desired
+            if (
+                $this->getInput('hideNNPlus') &&
+                str_contains($url, 'www.nn.de')
+            ) {
+                continue;
+            }
+
+            $item = self::getArticle($url);
+
+            // exclude police reports if desired
+            if (
+                !$this->getInput('policeReports') &&
+                str_contains($item['content'], 'Hier geht es zu allen aktuellen Polizeimeldungen.')
+            ) {
+                continue;
+            }
+
+            // exclude dpa articles
+            if (
+                $this->getInput('hideDPA') &&
+                str_contains($item['author'], 'dpa')
+            ) {
+                continue;
+            }
+
+            $this->items[] = $item;
         }
     }
 

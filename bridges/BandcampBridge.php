@@ -313,6 +313,7 @@ class BandcampBridge extends BridgeAbstract
     private function apiGet($endpoint, $query_data)
     {
         $url = self::URI . 'api/' . $endpoint . '?' . http_build_query($query_data);
+        // todo: 429 Too Many Requests happens a lot
         $data = json_decode(getContents($url));
         return $data;
     }
@@ -396,6 +397,7 @@ class BandcampBridge extends BridgeAbstract
         // By tag
         $regex = '/^(https?:\/\/)?bandcamp\.com\/tag\/([^\/.&?\n]+)/';
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = 'By tag';
             $params['tag'] = urldecode($matches[2]);
             return $params;
         }
@@ -403,6 +405,7 @@ class BandcampBridge extends BridgeAbstract
         // By band
         $regex = '/^(https?:\/\/)?([^\/.&?\n]+?)\.bandcamp\.com/';
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = 'By band';
             $params['band'] = urldecode($matches[2]);
             return $params;
         }
@@ -410,6 +413,7 @@ class BandcampBridge extends BridgeAbstract
         // By album
         $regex = '/^(https?:\/\/)?([^\/.&?\n]+?)\.bandcamp\.com\/album\/([^\/.&?\n]+)/';
         if (preg_match($regex, $url, $matches) > 0) {
+            $params['context'] = 'By album';
             $params['band'] = urldecode($matches[2]);
             $params['album'] = urldecode($matches[3]);
             return $params;

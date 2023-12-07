@@ -41,6 +41,12 @@ class RedditBridge extends BridgeAbstract
                 'required' => true,
                 'exampleValue' => 'selfhosted',
                 'title' => 'SubReddit name'
+            ],
+            'f' => [
+                'name' => 'Flair',
+                'required' => false,
+                'exampleValue' => 'Proxy',
+                'title' => 'Flair filter'
             ]
         ],
         'multi' => [
@@ -67,46 +73,23 @@ class RedditBridge extends BridgeAbstract
         ]
     ];
 
-    public function detectParameters($url)
-    {
-        $parsed_url = parse_url($url);
-
-        if ($parsed_url['host'] != 'www.reddit.com' && $parsed_url['host'] != 'old.reddit.com') {
-            return null;
-        }
-
-        $path = explode('/', $parsed_url['path']);
-
-        if ($path[1] == 'r') {
-            return [
-                'r' => $path[2]
-            ];
-        } elseif ($path[1] == 'user') {
-            return [
-                'u' => $path[2]
-            ];
-        } else {
-            return null;
-        }
-    }
-
-    public function getIcon()
-    {
-        return 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-96x96.png';
-    }
-
-    public function getName()
-    {
-        if ($this->queriedContext == 'single') {
-            return 'Reddit r/' . $this->getInput('r');
-        } elseif ($this->queriedContext == 'user') {
-            return 'Reddit u/' . $this->getInput('u');
-        } else {
-            return self::NAME;
-        }
-    }
-
     public function collectData()
+    {
+        $cacheKey = 'reddit_rate_limit';
+        if ($this->cache->get($cacheKey)) {
+            throw new HttpException('429 Too Many Requests', 429);
+        }
+        try {
+            $this->collectDataInternal();
+        } catch (HttpException $e) {
+            if ($e->getCode() === 429) {
+                $this->cache->set($cacheKey, true, 60 * 16);
+            }
+            throw $e;
+        }
+    }
+
+    private function collectDataInternal(): void
     {
         $user = false;
         $comments = false;
@@ -134,19 +117,32 @@ class RedditBridge extends BridgeAbstract
             $keywords = '';
         }
 
+        if (!empty($this->getInput('f')) && $this->queriedContext == 'single') {
+            $flair = $this->getInput('f');
+            $flair = str_replace(' ', '%20', $flair);
+            $flair = 'flair%3A%22' . $flair . '%22%20';
+        } else {
+            $flair = '';
+        }
+
         foreach ($subreddits as $subreddit) {
             $name = trim($subreddit);
-            $values = getContents(self::URI
-                    . '/search.json?q='
-                    . $keywords
-                    . ($user ? 'author%3A' : 'subreddit%3A')
-                    . $name
-                    . '&sort='
-                    . $this->getInput('d')
-                    . '&include_over_18=on');
-            $decodedValues = json_decode($values);
+            $url = self::URI
+                . '/search.json?q='
+                . $keywords
+                . $flair
+                . ($user ? 'author%3A' : 'subreddit%3A')
+                . $name
+                . '&sort='
+                . $this->getInput('d')
+                . '&include_over_18=on';
 
-            foreach ($decodedValues->data->children as $post) {
+            $version = 'v0.0.1';
+            $useragent = "rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)";
+            $json = getContents($url, ['User-Agent: ' . $useragent]);
+            $parsedJson = Json::decode($json, false);
+
+            foreach ($parsedJson->data->children as $post) {
                 if ($post->kind == 't1' && !$comments) {
                     continue;
                 }
@@ -188,14 +184,17 @@ class RedditBridge extends BridgeAbstract
 
                     $item['content']
                         = htmlspecialchars_decode($data->selftext_html);
-                } elseif (isset($data->post_hint) ? $data->post_hint == 'link' : false) {
+                } elseif (isset($data->post_hint) && $data->post_hint == 'link') {
                     // Link with preview
 
                     if (isset($data->media)) {
-                        // Reddit embeds content for some sites (e.g. Twitter)
-                        $embed = htmlspecialchars_decode(
-                            $data->media->oembed->html
-                        );
+                        // todo: maybe switch on the type
+                        if (isset($data->media->oembed->html)) {
+                            // Reddit embeds content for some sites (e.g. Twitter)
+                            $embed = htmlspecialchars_decode($data->media->oembed->html);
+                        } else {
+                            $embed = '';
+                        }
                     } else {
                         $embed = '';
                     }
@@ -268,6 +267,22 @@ class RedditBridge extends BridgeAbstract
         });
     }
 
+    public function getIcon()
+    {
+        return 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-96x96.png';
+    }
+
+    public function getName()
+    {
+        if ($this->queriedContext == 'single') {
+            return 'Reddit r/' . $this->getInput('r');
+        } elseif ($this->queriedContext == 'user') {
+            return 'Reddit u/' . $this->getInput('u');
+        } else {
+            return self::NAME;
+        }
+    }
+
     private function encodePermalink($link)
     {
         return self::URI . implode(
@@ -286,5 +301,37 @@ class RedditBridge extends BridgeAbstract
     private function link($href, $text)
     {
         return '<a href="' . $href . '">' . $text . '</a>';
+    }
+
+    public function detectParameters($url)
+    {
+        try {
+            $urlObject = Url::fromString($url);
+        } catch (UrlException $e) {
+            return null;
+        }
+
+        $host = $urlObject->getHost();
+        $path = $urlObject->getPath();
+
+        $pathSegments = explode('/', $path);
+
+        if ($host !== 'www.reddit.com' && $host !== 'old.reddit.com') {
+            return null;
+        }
+
+        if ($pathSegments[1] == 'r') {
+            return [
+                'context' => 'single',
+                'r' => $pathSegments[2],
+            ];
+        } elseif ($pathSegments[1] == 'user') {
+            return [
+                'context' => 'user',
+                'u' => $pathSegments[2],
+            ];
+        } else {
+            return null;
+        }
     }
 }

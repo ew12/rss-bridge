@@ -32,23 +32,18 @@ class MrssFormat extends FormatAbstract
     protected const ATOM_NS = 'http://www.w3.org/2005/Atom';
     protected const MRSS_NS = 'http://search.yahoo.com/mrss/';
 
-    const ALLOWED_IMAGE_EXT = [
-        '.gif', '.jpg', '.png'
-    ];
-
     public function stringify()
     {
-        $urlPrefix = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 'https://' : 'http://';
-        $urlHost = (isset($_SERVER['HTTP_HOST'])) ? $_SERVER['HTTP_HOST'] : '';
-        $urlPath = (isset($_SERVER['PATH_INFO'])) ? $_SERVER['PATH_INFO'] : '';
-        $urlRequest = (isset($_SERVER['REQUEST_URI'])) ? $_SERVER['REQUEST_URI'] : '';
+        $document = new \DomDocument('1.0', $this->getCharset());
 
-        $feedUrl = $urlPrefix . $urlHost . $urlRequest;
-
+        $feedUrl = get_current_url();
         $extraInfos = $this->getExtraInfos();
-        $uri = !empty($extraInfos['uri']) ? $extraInfos['uri'] : REPOSITORY;
+        if (empty($extraInfos['uri'])) {
+            $uri = REPOSITORY;
+        } else {
+            $uri = $extraInfos['uri'];
+        }
 
-        $document = new DomDocument('1.0', $this->getCharset());
         $document->formatOutput = true;
         $feed = $document->createElement('rss');
         $document->appendChild($feed);
@@ -72,8 +67,13 @@ class MrssFormat extends FormatAbstract
         $channel->appendChild($description);
         $description->appendChild($document->createTextNode($extraInfos['name']));
 
+        $allowedIconExtensions = [
+            '.gif',
+            '.jpg',
+            '.png',
+        ];
         $icon = $extraInfos['icon'];
-        if (!empty($icon) && in_array(substr($icon, -4), self::ALLOWED_IMAGE_EXT)) {
+        if (!empty($icon) && in_array(substr($icon, -4), $allowedIconExtensions)) {
             $feedImage = $document->createElement('image');
             $channel->appendChild($feedImage);
             $iconUrl = $document->createElement('url');
@@ -100,20 +100,23 @@ class MrssFormat extends FormatAbstract
         $linkSelf->setAttribute('href', $feedUrl);
 
         foreach ($this->getItems() as $item) {
+            $itemArray = $item->toArray();
             $itemTimestamp = $item->getTimestamp();
             $itemTitle = $item->getTitle();
             $itemUri = $item->getURI();
-            $itemContent = $item->getContent() ? $this->sanitizeHtml($item->getContent()) : '';
-            $entryID = $item->getUid();
+            $itemContent = $item->getContent() ? break_annoying_html_tags($item->getContent()) : '';
+            $itemUid = $item->getUid();
             $isPermaLink = 'false';
 
-            if (empty($entryID) && !empty($itemUri)) { // Fallback to provided URI
-                $entryID = $itemUri;
+            if (empty($itemUid) && !empty($itemUri)) {
+                // Fallback to provided URI
+                $itemUid = $itemUri;
                 $isPermaLink = 'true';
             }
 
-            if (empty($entryID)) { // Fallback to title and content
-                $entryID = hash('sha1', $itemTitle . $itemContent);
+            if (empty($itemUid)) {
+                // Fallback to title and content
+                $itemUid = hash('sha1', $itemTitle . $itemContent);
             }
 
             $entry = $document->createElement('item');
@@ -125,7 +128,21 @@ class MrssFormat extends FormatAbstract
                 $entryTitle->appendChild($document->createTextNode($itemTitle));
             }
 
-            if (!empty($itemUri)) {
+            if (isset($itemArray['itunes'])) {
+                $feed->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:itunes', self::ITUNES_NS);
+                foreach ($itemArray['itunes'] as $itunesKey => $itunesValue) {
+                    $itunesProperty = $document->createElementNS(self::ITUNES_NS, $itunesKey);
+                    $entry->appendChild($itunesProperty);
+                    $itunesProperty->appendChild($document->createTextNode($itunesValue));
+                }
+                if (isset($itemArray['enclosure'])) {
+                    $itunesEnclosure = $document->createElement('enclosure');
+                    $entry->appendChild($itunesEnclosure);
+                    $itunesEnclosure->setAttribute('url', $itemArray['enclosure']['url']);
+                    $itunesEnclosure->setAttribute('length', $itemArray['enclosure']['length']);
+                    $itunesEnclosure->setAttribute('type', $itemArray['enclosure']['type']);
+                }
+            } if (!empty($itemUri)) {
                 $entryLink = $document->createElement('link');
                 $entry->appendChild($entryLink);
                 $entryLink->appendChild($document->createTextNode($itemUri));
@@ -134,12 +151,12 @@ class MrssFormat extends FormatAbstract
             $entryGuid = $document->createElement('guid');
             $entryGuid->setAttribute('isPermaLink', $isPermaLink);
             $entry->appendChild($entryGuid);
-            $entryGuid->appendChild($document->createTextNode($entryID));
+            $entryGuid->appendChild($document->createTextNode($itemUid));
 
             if (!empty($itemTimestamp)) {
                 $entryPublished = $document->createElement('pubDate');
                 $entry->appendChild($entryPublished);
-                $entryPublished->appendChild($document->createTextNode(gmdate(DATE_RFC2822, $itemTimestamp)));
+                $entryPublished->appendChild($document->createTextNode(gmdate(\DATE_RFC2822, $itemTimestamp)));
             }
 
             if (!empty($itemContent)) {
@@ -152,10 +169,9 @@ class MrssFormat extends FormatAbstract
                 $entryEnclosure = $document->createElementNS(self::MRSS_NS, 'content');
                 $entry->appendChild($entryEnclosure);
                 $entryEnclosure->setAttribute('url', $enclosure);
-                $entryEnclosure->setAttribute('type', getMimeType($enclosure));
+                $entryEnclosure->setAttribute('type', parse_mime_type($enclosure));
             }
 
-            $entryCategories = '';
             foreach ($item->getCategories() as $category) {
                 $entryCategory = $document->createElement('category');
                 $entry->appendChild($entryCategory);
@@ -163,11 +179,10 @@ class MrssFormat extends FormatAbstract
             }
         }
 
-        $toReturn = $document->saveXML();
-
+        $xml = $document->saveXML();
         // Remove invalid non-UTF8 characters
         ini_set('mbstring.substitute_character', 'none');
-        $toReturn = mb_convert_encoding($toReturn, $this->getCharset(), 'UTF-8');
-        return $toReturn;
+        $xml = mb_convert_encoding($xml, $this->getCharset(), 'UTF-8');
+        return $xml;
     }
 }

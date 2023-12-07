@@ -3,10 +3,10 @@
 class GitlabIssueBridge extends BridgeAbstract
 {
     const MAINTAINER = 'Mynacol';
-    const NAME = 'Gitlab Issue/Merge Request';
+    const NAME = 'Gitlab Issue/Merge Request/Epic';
     const URI = 'https://gitlab.com/';
     const CACHE_TIMEOUT = 1800; // 30min
-    const DESCRIPTION = 'Returns  comments of an issue/MR of a gitlab project';
+    const DESCRIPTION = 'Returns  comments of an issue/MR/Epic of a gitlab project';
 
     const PARAMETERS = [
         'global' => [
@@ -18,12 +18,12 @@ class GitlabIssueBridge extends BridgeAbstract
             ],
             'u' => [
                 'name' => 'User/Organization name',
-                'exampleValue' => 'fdroid',
+                'exampleValue' => 'gitlab-org',
                 'required' => true
             ],
             'p' => [
                 'name' => 'Project name',
-                'exampleValue' => 'fdroidclient',
+                'exampleValue' => 'gitlab-foss',
                 'required' => true
             ]
 
@@ -32,7 +32,7 @@ class GitlabIssueBridge extends BridgeAbstract
             'i' => [
                 'name' => 'Issue number',
                 'type' => 'number',
-                'exampleValue' => '2099',
+                'exampleValue' => '1',
                 'required' => true
             ]
         ],
@@ -40,7 +40,15 @@ class GitlabIssueBridge extends BridgeAbstract
             'i' => [
                 'name' => 'Merge Request number',
                 'type' => 'number',
-                'exampleValue' => '2099',
+                'exampleValue' => '1',
+                'required' => true
+            ]
+        ],
+        'Epic comments' => [
+            'i' => [
+                'name' => 'Epic number',
+                'type' => 'number',
+                'exampleValue' => '1',
                 'required' => true
             ]
         ]
@@ -55,6 +63,9 @@ class GitlabIssueBridge extends BridgeAbstract
                 break;
             case 'Merge Request comments':
                 $name .= ' MR !' . $this->getInput('i');
+                break;
+            case 'Epic comments':
+                $name .= ' Epic &' . $this->getInput('i');
                 break;
             default:
                 return parent::getName();
@@ -73,6 +84,9 @@ class GitlabIssueBridge extends BridgeAbstract
                 break;
             case 'Merge Request comments':
                 $uri .= '-/merge_requests';
+                break;
+            case 'Epic comments':
+                $uri = 'https://' . $host . '/groups/' . $this->getInput('u') . '/-/epics';
                 break;
             default:
                 return $uri;
@@ -107,8 +121,10 @@ class GitlabIssueBridge extends BridgeAbstract
         foreach ($comments as $value) {
             foreach ($value->notes as $comment) {
                 $item = [];
-                $item['uri'] = $comment->noteable_note_url;
-                $item['uid'] = $item['uri'];
+                if ($comment->noteable_note_url !== null) {
+                    $item['uri'] = $comment->noteable_note_url;
+                    $item['uid'] = $item['uri'];
+                }
 
                 // TODO fix invalid timestamps (fdroid bot)
                 $item['timestamp'] = $comment->created_at ?? $comment->updated_at ?? $comment->last_edited_at;
@@ -158,7 +174,10 @@ class GitlabIssueBridge extends BridgeAbstract
 
         $item['timestamp'] = $description->created_at ?? $description->updated_at;
 
-        $item['author'] = $this->parseAuthor($description_html);
+        $author = $this->parseAuthor($description_html);
+        if ($author) {
+            $item['author'] = $author;
+        }
 
         $item['title'] = $description->title;
         $item['content'] = markdownToHtml($description->description);
@@ -179,7 +198,10 @@ class GitlabIssueBridge extends BridgeAbstract
 
         $item['timestamp'] = $description_html->find('.merge-request-details time', 0)->datetime;
 
-        $item['author'] = $this->parseAuthor($description_html);
+        $author = $this->parseAuthor($description_html);
+        if ($author) {
+            $item['author'] = $author;
+        }
 
         $item['title'] = 'Merge Request ' . $description->title;
         $item['content'] = markdownToHtml($description->description);
@@ -205,6 +227,9 @@ class GitlabIssueBridge extends BridgeAbstract
 
         $authors = $description_html->find('.issuable-meta a.author-link, .merge-request a.author-link');
         $editors = $description_html->find('.edited-text a.author-link');
+        if ($authors === [] && $editors === []) {
+            return null;
+        }
         $author_str = implode(' ', $authors);
         if ($editors) {
             $author_str .= ', ' . implode(' ', $editors);

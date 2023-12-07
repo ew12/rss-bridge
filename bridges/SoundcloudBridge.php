@@ -36,7 +36,6 @@ class SoundCloudBridge extends BridgeAbstract
 
     private $feedTitle = null;
     private $feedIcon = null;
-    private $clientIDCache = null;
 
     private $clientIdRegex = '/client_id.*?"(.+?)"/';
     private $widgetRegex = '/widget-.+?\.js/';
@@ -55,15 +54,14 @@ class SoundCloudBridge extends BridgeAbstract
 
         foreach ($apiItems->collection as $index => $apiItem) {
             if (in_array($this->getInput('t'), $hasTrackObject) === true) {
-                $apiItem = $apiItem->track;
+                $apiItem = $apiItem->playlist ?? $apiItem->track;
             }
 
             $item = [];
             $item['author'] = $apiItem->user->username;
             $item['title'] = $apiItem->user->username . ' - ' . $apiItem->title;
             $item['timestamp'] = strtotime($apiItem->created_at);
-
-            $description = nl2br($apiItem->description);
+            $description = nl2br($apiItem->description ?? '');
 
             $item['content'] = <<<HTML
 				<p>{$description}</p>
@@ -116,26 +114,11 @@ HTML;
         return parent::getName();
     }
 
-    private function initClientIDCache()
-    {
-        if ($this->clientIDCache !== null) {
-            return;
-        }
-
-        $cacheFactory = new CacheFactory();
-
-        $this->clientIDCache = $cacheFactory->create();
-        $this->clientIDCache->setScope(get_called_class());
-        $this->clientIDCache->setKey(['client_id']);
-    }
-
     private function getClientID()
     {
-        $this->initClientIDCache();
+        $clientID = $this->cache->get('SoundCloudBridge_client_id');
 
-        $clientID = $this->clientIDCache->loadData();
-
-        if ($clientID == null) {
+        if (!$clientID) {
             return $this->refreshClientID();
         } else {
             return $clientID;
@@ -144,8 +127,6 @@ HTML;
 
     private function refreshClientID()
     {
-        $this->initClientIDCache();
-
         $playerHTML = getContents($this->playerUrl);
 
         // Extract widget JS filenames from player page
@@ -163,8 +144,7 @@ HTML;
 
             if (preg_match($this->clientIdRegex, $widgetJS, $matches)) {
                 $clientID = $matches[1];
-                $this->clientIDCache->saveData($clientID);
-
+                $this->cache->set('SoundCloudBridge_client_id', $clientID);
                 return $clientID;
             }
         }

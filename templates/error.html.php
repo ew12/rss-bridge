@@ -1,22 +1,15 @@
-<div style="width: 60%; margin: 30px auto">
+<?php
+/**
+ * This template is for rendering error messages (not exceptions)
+ */
+?>
 
+<?php if (isset($title)): ?>
     <h1>
-        <?= e($title ?? 'Something went wrong') ?>
+        <?= e($title) ?>
     </h1>
+<?php endif; ?>
 
-    <br>
+<p>
     <?= e($message) ?>
-    <br>
-    <br>
-
-    <?php if (isset($stacktrace)): ?>
-        <?php foreach ($stacktrace as $frame) : ?>
-            <code>
-                <?= e($frame) ?>
-            </code>
-            <br>
-        <?php endforeach; ?>
-    <?php endif; ?>
-
-</div>
-
+</p>

@@ -8,38 +8,27 @@ class BinanceBridge extends BridgeAbstract
     const MAINTAINER = 'thefranke';
     const CACHE_TIMEOUT = 3600; // 1h
 
+    public function collectData()
+    {
+        $url = 'https://www.binance.com/bapi/composite/v1/public/content/blog/list?category=&tag=&page=1&size=12';
+        $json = getContents($url);
+        $data = Json::decode($json, false);
+        foreach ($data->data->blogList as $post) {
+            $item = [];
+            $item['title'] = $post->title;
+            // Url slug not in json
+            //$item['uri'] = $uri;
+            $item['timestamp'] = $post->postTimeUTC / 1000;
+            $item['author'] = 'Binance';
+            $item['content'] = $post->brief;
+            //$item['categories'] = $category;
+            $item['uid'] = $post->idStr;
+            $this->items[] = $item;
+        }
+    }
+
     public function getIcon()
     {
         return 'https://bin.bnbstatic.com/static/images/common/favicon.ico';
-    }
-
-    public function collectData()
-    {
-        $html = getSimpleHTMLDOM(self::URI)
-            or returnServerError('Could not fetch Binance blog data.');
-
-        $appData = $html->find('script[id="__APP_DATA"]');
-        $appDataJson = json_decode($appData[0]->innertext);
-
-        foreach ($appDataJson->pageData->redux->blogList->blogList as $element) {
-            $date = $element->postTime;
-            $abstract = $element->brief;
-            $uri = self::URI . '/' . $element->lang . '/blog/' . $element->idStr;
-            $title = $element->title;
-            $content = $element->content;
-
-            $item = [];
-            $item['title'] = $title;
-            $item['uri'] = $uri;
-            $item['timestamp'] = substr($date, 0, -3);
-            $item['author'] = 'Binance';
-            $item['content'] = $content;
-
-            $this->items[] = $item;
-
-            if (count($this->items) >= 10) {
-                break;
-            }
-        }
     }
 }
