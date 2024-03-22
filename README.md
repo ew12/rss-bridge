@@ -64,7 +64,7 @@ These instructions have been tested on a fresh Debian 12 VM from Digital Ocean (
 ```shell
 timedatectl set-timezone Europe/Oslo
 
-apt install git nginx php8.2-fpm php-mbstring php-simplexml php-curl
+apt install git nginx php8.2-fpm php-mbstring php-simplexml php-curl php-intl
 
 # Create a new user account
 useradd --shell /bin/bash --create-home rss-bridge
@@ -104,34 +104,34 @@ server {
     server_name example.com;
     access_log /var/log/nginx/rss-bridge.access.log;
     error_log /var/log/nginx/rss-bridge.error.log;
+    log_not_found off;
 
     # Intentionally not setting a root folder here
-        
+
     # autoindex is off by default but feels good to explicitly turn off
     autoindex off;
 
-    # Static content only served here 
+    # Static content only served here
     location /static/ {
         alias /var/www/rss-bridge/static/;
     }
 
-    # Pass off to php-fpm only when location is exactly /
+    # Pass off to php-fpm when location is exactly /
     location = / {
         root /var/www/rss-bridge/;
         include snippets/fastcgi-php.conf;
+        fastcgi_read_timeout 45s;
         fastcgi_pass unix:/run/php/rss-bridge.sock;
     }
 
     # Reduce spam
     location = /favicon.ico {
         access_log off;
-        log_not_found off;
     }
 
     # Reduce spam
     location = /robots.txt {
         access_log off;
-        log_not_found off;
     }
 }
 ```
@@ -167,12 +167,10 @@ Restart fpm and nginx:
 
 ```shell
 # Lint and restart php-fpm
-php-fpm8.2 -t
-systemctl restart php8.2-fpm
+php-fpm8.2 -t && systemctl restart php8.2-fpm
 
 # Lint and restart nginx
-nginx -t
-systemctl restart nginx
+nginx -t && systemctl restart nginx
 ```
 
 ### How to install from Composer
@@ -254,6 +252,12 @@ Learn more in
 [Installation](https://rss-bridge.github.io/rss-bridge/For_Hosts/Installation.html).
 
 ## How-to
+
+### How to fix "Access denied."
+
+Output is from php-fpm. It is unable to read index.php.
+
+    chown rss-bridge:rss-bridge /var/www/rss-bridge/index.php
 
 ### How to password-protect the instance (token)
 
