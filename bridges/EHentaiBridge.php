@@ -80,7 +80,7 @@ class EHentaiBridge extends BridgeAbstract
 
         //$content = array_slice($content, 0, $this->getInput('posts'));
 
-        foreach ($content->find ( 'table.itg.gltc >> tr' as $result) {
+        foreach ($content->find ( 'table.itg.gltc >> tr' ) as $result) {
 
             $item = [];
             $item['enclosures'] = array ( self::URI.$result->find('img', 0)->getAttribute('src') );
@@ -88,7 +88,7 @@ class EHentaiBridge extends BridgeAbstract
             $item [ 'uri' ] = self::URI.$result -> find ( 'a', 1 ) -> href;
             $item [ 'title' ] = $result -> find ( 'glink', 0 ) -> innertext ();
             $item [ 'timestamp' ] = $result -> find ( 'div [ onClick ] :not ( [class] )', 0 ) -> innertext ();
-            $item [ 'author' ] = $result -> find ( '.gl4c.glhide div', 0 ) -> innertext ()
+            $item [ 'author' ] = $result -> find ( '.gl4c.glhide div', 0 ) -> innertext ();
             $item [ 'content' ] = str_replace ( '\n', '<br /', $result -> find ( 'glink + div', 0 ) -> innertext () . $result -> find ( '.gl4c.glhide div + div', 0 ) -> innertext () );
             
             $this->items[] = $item;
