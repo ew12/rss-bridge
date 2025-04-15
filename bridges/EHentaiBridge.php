@@ -90,7 +90,7 @@ class EHentaiBridge extends BridgeAbstract
                 $item [ 'title' ] = $result -> find ( '.glink', 0 ) -> innertext ();
                 $item [ 'timestamp' ] = $result -> find ( 'div[onclick][!class]', 0 ) -> innertext ();
                 $item [ 'author' ] = $result -> find ( 'td.gl4c.glhide div a', 0 ) -> innertext ();
-                $item [ 'content' ] = str_replace ( " ", '<br />', $result -> find ( '.glink + div', 0 ) -> text () . "&nbsp;&nbsp;" . $result -> find ( '.gl4c.glhide div + div', 0 ) -> text () );
+                $item [ 'content' ] = $result -> find ( '.glink + div', 0 ) -> innertext () . "<br />" . $result -> find ( '.gl4c.glhide div + div', 0 ) -> text ();
                 $this->items[] = $item;
             }
             
