@@ -80,16 +80,18 @@ class EHentaiBridge extends BridgeAbstract
 
         //$content = array_slice($content, 0, $this->getInput('posts'));
 
-        foreach ($content->find ( 'table.itg.gltc >> tr' ) as $result) {
+        foreach ($content->find ( 'table.itg.gltc tr' ) as $result) {
 
             $item = [];
-            $item['enclosures'] = array ( self::URI.$result->find('img', 0)->getAttribute('src') );
-            //$item [ 'uri' ] = self::URI.$result -> find ( 'gl3c glname', 0 ) -> find ( 'a', 0 ) -> href;
-            $item [ 'uri' ] = self::URI.$result -> find ( 'a', 1 ) -> href;
-            $item [ 'title' ] = $result -> find ( 'glink', 0 ) -> innertext ();
-            $item [ 'timestamp' ] = $result -> find ( 'div [ onClick ] :not ( [class] )', 0 ) -> innertext ();
-            $item [ 'author' ] = $result -> find ( '.gl4c.glhide div', 0 ) -> innertext ();
-            $item [ 'content' ] = str_replace ( '\n', '<br /', $result -> find ( 'glink + div', 0 ) -> innertext () . $result -> find ( '.gl4c.glhide div + div', 0 ) -> innertext () );
+            if ( $result -> find ( 'img', 0 ) !== null ) {
+                $item['enclosures'] = ( $result -> find ( 'img', 0 ) ->hasAttribute ( 'data-src' ) ) ? array ( $result->find('img', 0)->getAttribute('data-src') ) : array ( URI.$result -> find ( 'img', 0 ) -> getAttribute ( 'src' ) );
+                //$item [ 'uri' ] = self::URI.$result -> find ( 'gl3c glname', 0 ) -> find ( 'a', 0 ) -> href;
+                $item [ 'uri' ] = self::URI.$result -> find ( 'a', 1 ) -> href;
+                $item [ 'title' ] = $result -> find ( 'glink', 0 ) -> innertext ();
+                $item [ 'timestamp' ] = $result -> find ( 'div[onclick][!class]', 0 ) -> innertext ();
+                $item [ 'author' ] = $result -> find ( 'td.gl4c.glhide div a', 0 ) -> innertext ();
+                $item [ 'content' ] = str_replace ( "\n", '<br /', $result -> find ( '.glink + div', 0 ) -> text () . "&nbsp;&nbsp;" . $result -> find ( '.gl4c.glhide div + div', 0 ) -> text () );
+            }
             
             $this->items[] = $item;
         }
