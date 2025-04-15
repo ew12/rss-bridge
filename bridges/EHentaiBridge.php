@@ -1,9 +1,6 @@
 <?php
 
-/**
- * Good resource on API return values (Ex: illustType):
- * https://hackage.haskell.org/package/pixiv-0.1.0/docs/Web-Pixiv-Types.html
- */
+
 class EHentaiBridge extends BridgeAbstract
 {
     const NAME = 'e-hentai';
