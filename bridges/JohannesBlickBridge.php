@@ -3,14 +3,13 @@
 class JohannesBlickBridge extends BridgeAbstract
 {
     const NAME        = 'Johannes Blick';
-    const URI         = 'https://www.st-johannes-baptist.de/index.php/unsere-medien/johannesblick-archiv';
+    const URI         = 'https://www.st-johannes-baptist.de/index.php/medien-und-downloads/archiv-johannesblick';
     const DESCRIPTION = 'RSS feed for Johannes Blick';
     const MAINTAINER  = 'jummo4@yahoo.de';
 
     public function collectData()
     {
-        $html = getSimpleHTMLDOM(self::URI)
-            or returnServerError('Could not request: ' . self::URI);
+        $html = getSimpleHTMLDOM(self::URI);
 
         $html = defaultLinkTo($html, self::URI);
         foreach ($html->find('ul[class=easyfolderlisting] > li > a') as $index => $a) {

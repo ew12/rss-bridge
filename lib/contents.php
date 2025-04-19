@@ -5,8 +5,8 @@
  *
  * @param array $httpHeaders E.g. ['Content-type: text/plain']
  * @param array $curlOptions Associative array e.g. [CURLOPT_MAXREDIRS => 3]
- * @param bool $returnFull Whether to return an array: ['code' => int, 'headers' => array, 'content' => string]
- * @return string|array
+ * @param bool $returnFull Whether to return Response object
+ * @return string|Response
  */
 function getContents(
     string $url,
@@ -14,8 +14,22 @@ function getContents(
     array $curlOptions = [],
     bool $returnFull = false
 ) {
-    $httpClient = RssBridge::getHttpClient();
-    $cache = RssBridge::getCache();
+    global $container;
+
+    /** @var HttpClient $httpClient */
+    $httpClient = $container['http_client'];
+
+    /** @var CacheInterface $cache */
+    $cache = $container['cache'];
+
+    // TODO: consider url validation at this point
+
+    $config = [
+        'useragent'     => Configuration::getConfig('http', 'useragent'),
+        'timeout'       => Configuration::getConfig('http', 'timeout'),
+        'retries'       => Configuration::getConfig('http', 'retries'),
+        'curl_options'  => $curlOptions,
+    ];
 
     $httpHeadersNormalized = [];
     foreach ($httpHeaders as $httpHeader) {
@@ -62,13 +76,7 @@ function getContents(
         'TE' => 'trailers',
     ];
 
-    $config = [
-        'useragent' => Configuration::getConfig('http', 'useragent'),
-        'timeout' => Configuration::getConfig('http', 'timeout'),
-        'retries' => Configuration::getConfig('http', 'retries'),
-        'headers' => array_merge($defaultHttpHeaders, $httpHeadersNormalized),
-        'curl_options' => $curlOptions,
-    ];
+    $config['headers'] = array_merge($defaultHttpHeaders, $httpHeadersNormalized);
 
     $maxFileSize = Configuration::getConfig('http', 'max_filesize');
     if ($maxFileSize) {
@@ -111,13 +119,7 @@ function getContents(
             throw $e;
     }
     if ($returnFull === true) {
-        // todo: return the actual response object
-        return [
-            'code'      => $response->getCode(),
-            'headers'   => $response->getHeaders(),
-            // For legacy reasons, use 'content' instead of 'body'
-            'content'   => $response->getBody(),
-        ];
+        return $response;
     }
     return $response->getBody();
 }
@@ -146,7 +148,6 @@ function getContents(
  * when returning plaintext.
  * @param string $defaultSpanText Specifies the replacement text for `<span />`
  * tags when returning plaintext.
- * @return false|simple_html_dom Contents as simplehtmldom object.
  */
 function getSimpleHTMLDOM(
     $url,
@@ -158,11 +159,12 @@ function getSimpleHTMLDOM(
     $stripRN = true,
     $defaultBRText = DEFAULT_BR_TEXT,
     $defaultSpanText = DEFAULT_SPAN_TEXT
-) {
+): \simple_html_dom {
     $html = getContents($url, $header ?? [], $opts ?? []);
     if ($html === '') {
         throw new \Exception('Unable to parse dom because the http response was the empty string');
     }
+
     return str_get_html(
         $html,
         $lowercase,
@@ -175,10 +177,8 @@ function getSimpleHTMLDOM(
 }
 
 /**
- * Gets contents from the Internet as simplhtmldom object. Contents are cached
+ * Fetch contents from the Internet as simplhtmldom object. Contents are cached
  * and re-used for subsequent calls until the cache duration elapsed.
- *
- * _Notice_: Cached contents are forcefully removed after 24 hours (86400 seconds).
  *
  * @param string $url The URL.
  * @param int $ttl Cache duration in seconds.
@@ -216,7 +216,11 @@ function getSimpleHTMLDOMCached(
     $defaultBRText = DEFAULT_BR_TEXT,
     $defaultSpanText = DEFAULT_SPAN_TEXT
 ) {
-    $cache = RssBridge::getCache();
+    global $container;
+
+    /** @var CacheInterface $cache */
+    $cache = $container['cache'];
+
     $cacheKey = 'pages_' . $url;
     $content = $cache->get($cacheKey);
     if (!$content) {

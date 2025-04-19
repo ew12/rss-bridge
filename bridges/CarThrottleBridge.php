@@ -66,7 +66,7 @@ class CarThrottleBridge extends BridgeAbstract
         foreach ($categoryPage->find('div.cmg-card') as $post) {
             $item = [];
 
-            $titleElement = $post->find('div.title a')[0];
+            $titleElement = $post->find('a.title')[0];
             $post_uri = self::URI . $titleElement->getAttribute('href');
 
             if (!isset($post_uri) || $post_uri == '') {
@@ -80,31 +80,22 @@ class CarThrottleBridge extends BridgeAbstract
 
             $item['author'] = $this->parseAuthor($articlePage);
 
-            $articleElement = $articlePage->find('article')[0];
+            $articleImage = $articlePage->find('figure')[0];
+            $article = $articlePage->find('div.first-column div.body')[0];
 
             //remove ads
-            foreach ($articleElement->find('aside') as $ad) {
+            foreach ($article->find('aside') as $ad) {
                 $ad->outertext = '';
             }
 
-            $summary = $articleElement->find('div.summary')[0];
-
-            //remove header so we are left with the article content
-            foreach ($articleElement->find('header') as $found) {
-                $found->outertext = '';
-            }
-
-            //remove comments (registering on carthrottle.com is impossible so the comment sections are empty anyway)
-            foreach ($articleElement->find('#lbs-comments') as $found) {
-                $found->outertext = '';
-            }
+            $summary = $articlePage->find('div.summary')[0];
 
             //these are supposed to be hidden
-            foreach ($articleElement->find('.visually-hidden') as $found) {
+            foreach ($article->find('.visually-hidden') as $found) {
                 $found->outertext = '';
             }
 
-            $item['content'] = $summary . $articleElement;
+            $item['content'] = $summary . $articleImage . $article;
 
             array_push($this->items, $item);
         }
@@ -117,7 +108,7 @@ class CarThrottleBridge extends BridgeAbstract
             return '';
         }
 
-        $a = $authorDivs[0]->find('a');
+        $a = $authorDivs[0]->find('a')[0];
         if ($a) {
             return $a->innertext;
         }

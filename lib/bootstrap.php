@@ -7,10 +7,6 @@ if (is_file(__DIR__ . '/../vendor/autoload.php')) {
 const PATH_LIB_CACHES = __DIR__ . '/../caches/';
 const PATH_CACHE = __DIR__ . '/../cache/';
 
-// Allow larger files for simple_html_dom
-// todo: extract to config (if possible)
-const MAX_FILE_SIZE = 10000000;
-
 // Files
 $files = [
     __DIR__ . '/../lib/html.php',
@@ -37,6 +33,7 @@ spl_autoload_register(function ($className) {
         __DIR__ . '/../caches/',
         __DIR__ . '/../formats/',
         __DIR__ . '/../lib/',
+        __DIR__ . '/../middlewares/',
     ];
     foreach ($folders as $folder) {
         $file = $folder . $className . '.php';
@@ -45,9 +42,3 @@ spl_autoload_register(function ($className) {
         }
     }
 });
-
-$customConfig = [];
-if (file_exists(__DIR__ . '/../config.ini.php')) {
-    $customConfig = parse_ini_file(__DIR__ . '/../config.ini.php', true, INI_SCANNER_TYPED);
-}
-Configuration::loadConfiguration($customConfig, getenv());

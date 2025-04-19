@@ -27,6 +27,14 @@ class AO3Bridge extends BridgeAbstract
                     'Entire work' => 'all',
                 ],
             ],
+            'unique' => [
+                'name' => 'Make separate entries for new fic chapters',
+                'type' => 'checkbox',
+                'required' => false,
+                'title' => 'Make separate entries for new fic chapters',
+                'defaultValue' => 'checked',
+            ],
+            'limit' => self::LIMIT,
         ],
         'Bookmarks' => [
             'user' => [
@@ -68,21 +76,24 @@ class AO3Bridge extends BridgeAbstract
      */
     private function collectList($url)
     {
-        $httpClient = RssBridge::getHttpClient();
         $version = 'v0.0.1';
-        $agent = ['useragent' => "rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)"];
+        $headers = [
+            "useragent: rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)"
+        ];
+        $response = getContents($url, $headers);
 
-        $response = $httpClient->request($url, $agent);
-        $html = \str_get_html($response->getBody());
+        $html = \str_get_html($response);
         $html = defaultLinkTo($html, self::URI);
 
         // Get list title. Will include page range + count in some cases
-        $heading = ($html->find('#main > h2', 0));
+        $heading = ($html->find('#main h2', 0));
         if ($heading->find('a.tag')) {
             $heading = $heading->find('a.tag', 0);
         }
         $this->title = $heading->plaintext;
 
+        $limit = $this->getInput('limit') ?? 3;
+        $count = 0;
         foreach ($html->find('.index.group > li') as $element) {
             $item = [];
 
@@ -91,19 +102,38 @@ class AO3Bridge extends BridgeAbstract
                 continue; // discard deleted works
             }
             $item['title'] = $title->plaintext;
-            $item['content'] = $element;
             $item['uri'] = $title->href;
 
             $strdate = $element->find('div p.datetime', 0)->plaintext;
             $item['timestamp'] = strtotime($strdate);
 
+            // detach from rest of page because remove() is buggy
+            $element = str_get_html($element->outertext());
+            $tags = $element->find('ul.required-tags', 0);
+            foreach ($tags->childNodes() as $tag) {
+                $item['categories'][] = html_entity_decode($tag->plaintext);
+            }
+            $tags->remove();
+            $tags = $element->find('ul.tags', 0);
+            foreach ($tags->childNodes() as $tag) {
+                $item['categories'][] = html_entity_decode($tag->plaintext);
+            }
+            $tags->remove();
+
+            $item['content'] = implode('', $element->childNodes());
+
             $chapters = $element->find('dl dd.chapters', 0);
             // bookmarked series and external works do not have a chapters count
             $chapters = (isset($chapters) ? $chapters->plaintext : 0);
-            $item['uid'] = $item['uri'] . "/$strdate/$chapters";
+            if ($this->getInput('unique')) {
+                $item['uid'] = $item['uri'] . "/$strdate/$chapters";
+            } else {
+                $item['uid'] = $item['uri'];
+            }
+
 
             // Fetch workskin of desired chapter(s) in list
-            if ($this->getInput('range')) {
+            if ($this->getInput('range') && ($limit == 0 || $count++ < $limit)) {
                 $url = $item['uri'];
                 switch ($this->getInput('range')) {
                     case ('all'):
@@ -114,15 +144,20 @@ class AO3Bridge extends BridgeAbstract
                     case ('last'):
                         // only way to get this is using the navigate page unfortunately
                         $url .= '/navigate';
-                        $response = $httpClient->request($url, $agent);
-                        $html = \str_get_html($response->getBody());
+                        $response = getContents($url, $headers);
+                        $html = \str_get_html($response);
                         $html = defaultLinkTo($html, self::URI);
                         $url = $html->find('ol.index.group > li > a', -1)->href;
                         break;
                 }
-                $response = $httpClient->request($url, $agent);
-                $html = \str_get_html($response->getBody());
+                $response = getContents($url, $headers);
+
+                $html = \str_get_html($response);
                 $html = defaultLinkTo($html, self::URI);
+                // remove duplicate fic summary
+                if ($ficsum = $html->find('#workskin > .preface > .summary', 0)) {
+                    $ficsum->remove();
+                }
                 $item['content'] .= $html->find('#workskin', 0);
             }
 
@@ -141,16 +176,18 @@ class AO3Bridge extends BridgeAbstract
      */
     private function collectWork($url)
     {
-        $httpClient = RssBridge::getHttpClient();
         $version = 'v0.0.1';
-        $agent = ['useragent' => "rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)"];
+        $headers = [
+            "useragent: rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)"
+        ];
+        $response = getContents($url . '/navigate', $headers);
 
-        $response = $httpClient->request($url . '/navigate', $agent);
-        $html = \str_get_html($response->getBody());
+        $html = \str_get_html($response);
         $html = defaultLinkTo($html, self::URI);
 
-        $response = $httpClient->request($url . '?view_full_work=true', $agent);
-        $workhtml = \str_get_html($response->getBody());
+        $response = getContents($url . '?view_full_work=true', $headers);
+
+        $workhtml = \str_get_html($response);
         $workhtml = defaultLinkTo($workhtml, self::URI);
 
         $this->title = $html->find('h2 a', 0)->plaintext;

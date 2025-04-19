@@ -6,8 +6,10 @@ class FeedMergeBridge extends FeedExpander
     const NAME = 'FeedMerge';
     const URI = 'https://github.com/RSS-Bridge/rss-bridge';
     const DESCRIPTION = <<<'TEXT'
-This bridge merges two or more feeds into a single feed. Max 10 items are fetched from each feed.
-TEXT;
+        This bridge merges two or more feeds into a single feed. <br>
+        Max 10 latest items are fetched from each individual feed. <br>
+        Items with identical url or title are considered duplicates (and are removed). <br>
+    TEXT;
 
     const PARAMETERS = [
         [
@@ -36,11 +38,11 @@ TEXT;
     ];
 
     /**
-     * todo: Consider a strategy which produces a shorter feed url
+     * TODO: Consider a strategy which produces a shorter feed url
      */
     public function collectData()
     {
-        $limit = (int)($this->getInput('limit') ?: 10);
+        $limit = (int)($this->getInput('limit') ?: 99);
         $feeds = [
             $this->getInput('feed_1'),
             $this->getInput('feed_2'),
@@ -61,9 +63,10 @@ TEXT;
             if (count($feeds) > 1) {
                 // Allow one or more feeds to fail
                 try {
-                    $this->collectExpandableDatas($feed);
+                    $this->collectExpandableDatas($feed, 10);
                 } catch (HttpException $e) {
                     $this->logger->warning(sprintf('Exception in FeedMergeBridge: %s', create_sane_exception_message($e)));
+                    // This feed item might be spammy. Considering dropping it.
                     $this->items[] = [
                         'title' => 'RSS-Bridge: ' . $e->getMessage(),
                         // Give current time so it sorts to the top
@@ -71,7 +74,7 @@ TEXT;
                     ];
                     continue;
                 } catch (\Exception $e) {
-                    if (str_starts_with($e->getMessage(), 'Unable to parse xml')) {
+                    if (str_starts_with($e->getMessage(), 'Failed to parse xml')) {
                         // Allow this particular exception from FeedExpander
                         $this->logger->warning(sprintf('Exception in FeedMergeBridge: %s', create_sane_exception_message($e)));
                         continue;
@@ -79,29 +82,48 @@ TEXT;
                     throw $e;
                 }
             } else {
-                $this->collectExpandableDatas($feed);
+                $this->collectExpandableDatas($feed, 10);
             }
         }
 
-        // Sort by timestamp descending
+        // If $this->items is empty we should consider throw exception here
+
+        // Sort by timestamp, uri, title in descending order
         usort($this->items, function ($a, $b) {
             $t1 = $a['timestamp'] ?? $a['uri'] ?? $a['title'];
             $t2 = $b['timestamp'] ?? $b['uri'] ?? $b['title'];
             return $t2 <=> $t1;
         });
 
-        // Remove duplicates by using url as unique key
+        // Remove duplicates by url
         $items = [];
         foreach ($this->items as $item) {
-            $index = $item['uri'] ?? null;
-            if ($index) {
-                // Overwrite duplicates
-                $items[$index] = $item;
+            $uri = $item['uri'] ?? null;
+            if ($uri) {
+                // Insert or override the existing duplicate
+                $items[$uri] = $item;
             } else {
+                // The item doesn't have a uri!
                 $items[] = $item;
             }
         }
-        $this->items = array_slice(array_values($items), 0, $limit);
+        $this->items = array_values($items);
+
+        // Remove duplicates by title
+        $items = [];
+        foreach ($this->items as $item) {
+            $title = $item['title'] ?? null;
+            if ($title) {
+                // Insert or override the existing duplicate
+                $items[$title] = $item;
+            } else {
+                // The item doesn't have a title!
+                $items[] = $item;
+            }
+        }
+        $this->items = array_values($items);
+
+        $this->items = array_slice($this->items, 0, $limit);
     }
 
     public function getIcon()

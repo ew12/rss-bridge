@@ -10,6 +10,7 @@ class RedditBridge extends BridgeAbstract
     const MAINTAINER = 'dawidsowa';
     const NAME = 'Reddit Bridge';
     const URI = 'https://old.reddit.com';
+    const CACHE_TIMEOUT = 60 * 60 * 2; // 2h
     const DESCRIPTION = 'Return hot submissions from Reddit';
 
     const PARAMETERS = [
@@ -19,7 +20,15 @@ class RedditBridge extends BridgeAbstract
                 'required' => false,
                 'type' => 'number',
                 'exampleValue' => 100,
-                'title' => 'Filter out posts with lower score'
+                'title' => 'Filter out posts with lower score. Set to -1 to disable. If both score and comments are set, an OR is applied.',
+            ],
+            'min_comments' => [
+                'name' => 'Minimal number of comments',
+                'required' => false,
+                'type' => 'number',
+                'exampleValue' => 100,
+                'title' => 'Filter out posts with lower number of comments. Set to -1 to disable. If both score and comments are set, an OR is applied.',
+                'defaultValue' => -1
             ],
             'd' => [
                 'name' => 'Sort By',
@@ -29,9 +38,24 @@ class RedditBridge extends BridgeAbstract
                     'Hot' => 'hot',
                     'Relevance' => 'relevance',
                     'New' => 'new',
-                    'Top' => 'top'
+                    'Top' => 'top',
+                    'Comments' => 'comments',
                 ],
                 'defaultValue' => 'Hot'
+            ],
+            't' => [
+                'name' => 'Time',
+                'type' => 'list',
+                'title' => 'Sort by new, hot, top or relevancy',
+                'values' => [
+                    'All' => 'all',
+                    'Year' => 'year',
+                    'Month' => 'month',
+                    'Week' => 'week',
+                    'Day' => 'day',
+                    'Hour' => 'hour',
+                ],
+                'defaultValue' => 'week'
             ],
             'search' => [
                 'name' => 'Keyword search',
@@ -92,12 +116,12 @@ class RedditBridge extends BridgeAbstract
     {
         $forbiddenKey = 'reddit_forbidden';
         if ($this->cache->get($forbiddenKey)) {
-            throw new HttpException('403 Forbidden', 403);
+            throw new RateLimitException();
         }
 
         $rateLimitKey = 'reddit_rate_limit';
         if ($this->cache->get($rateLimitKey)) {
-            throw new HttpException('429 Too Many Requests', 429);
+            throw new RateLimitException();
         }
 
         try {
@@ -107,9 +131,10 @@ class RedditBridge extends BridgeAbstract
                 // 403 Forbidden
                 // This can possibly mean that reddit has permanently blocked this server's ip address
                 $this->cache->set($forbiddenKey, true, 60 * 61);
-            }
-            if ($e->getCode() === 429) {
-                $this->cache->set($rateLimitKey, true, 60 * 16);
+                throw new RateLimitException();
+            } elseif ($e->getCode() === 429) {
+                $this->cache->set($rateLimitKey, true, 60 * 61);
+                throw new RateLimitException();
             }
             throw $e;
         }
@@ -121,9 +146,10 @@ class RedditBridge extends BridgeAbstract
         $comments = false;
         $frontend = $this->getInput('frontend');
         if ($frontend == '') {
-                $frontend = 'https://old.reddit.com';
+            $frontend = 'https://old.reddit.com';
         }
         $section = $this->getInput('d');
+        $time = $this->getInput('t');
 
         switch ($this->queriedContext) {
             case 'single':
@@ -143,10 +169,14 @@ class RedditBridge extends BridgeAbstract
         $flareInput = $this->getInput('f');
 
         foreach ($subreddits as $subreddit) {
-            $version = 'v0.0.1';
+            $version = 'v0.0.2';
             $useragent = "rss-bridge $version (https://github.com/RSS-Bridge/rss-bridge)";
-            $url = self::createUrl($search, $flareInput, $subreddit, $user, $section, $this->queriedContext);
-            $json = getContents($url, ['User-Agent: ' . $useragent]);
+            $url = self::createUrl($search, $flareInput, $subreddit, $user, $section, $time, $this->queriedContext);
+
+            $response = getContents($url, ['User-Agent: ' . $useragent], [], true);
+
+            $json = $response->getBody();
+
             $parsedJson = Json::decode($json, false);
 
             foreach ($parsedJson->data->children as $post) {
@@ -156,8 +186,20 @@ class RedditBridge extends BridgeAbstract
 
                 $data = $post->data;
 
-                if ($data->score < $this->getInput('score')) {
-                    continue;
+                $min_score = $this->getInput('score');
+                $min_comments = $this->getInput('min_comments');
+                if ($min_score >= 0 && $min_comments >= 0) {
+                    if ($data->num_comments < $min_comments || $data->score < $min_score) {
+                        continue;
+                    }
+                } elseif ($min_score >= 0) {
+                    if ($data->score < $min_score) {
+                        continue;
+                    }
+                } elseif ($min_comments >= 0) {
+                    if ($data->num_comments < $min_comments) {
+                        continue;
+                    }
                 }
 
                 $item = [];
@@ -228,11 +270,14 @@ class RedditBridge extends BridgeAbstract
                 } elseif ($data->is_video) {
                     // Video
 
-                    // Higher index -> Higher resolution
-                    end($data->preview->images[0]->resolutions);
-                    $index = key($data->preview->images[0]->resolutions);
-
-                    $item['content'] = $this->createFigureLink($data->url, $data->preview->images[0]->resolutions[$index]->url, 'Video');
+                    if ($data->media->reddit_video) {
+                        $item['content'] = $this->createVideoContent($data->media->reddit_video);
+                    } else {
+                        // Higher index -> Higher resolution
+                        end($data->preview->images[0]->resolutions);
+                        $index = key($data->preview->images[0]->resolutions);
+                        $item['content'] = $this->createFigureLink($data->url, $data->preview->images[0]->resolutions[$index]->url, 'Video');
+                    }
                 } elseif (isset($data->media) && $data->media->type == 'youtube.com') {
                     // Youtube link
                     $item['content'] = $this->createFigureLink($data->url, $data->media->oembed->thumbnail_url, 'YouTube');
@@ -255,7 +300,7 @@ class RedditBridge extends BridgeAbstract
         });
     }
 
-    public static function createUrl($search, $flareInput, $subreddit, bool $user, $section, $queriedContext): string
+    public static function createUrl($search, $flareInput, $subreddit, bool $user, $section, $time, $queriedContext): string
     {
         if ($search === '') {
             $keywords = '';
@@ -277,6 +322,7 @@ class RedditBridge extends BridgeAbstract
             'q' => $keywords . $flair . ($user ? 'author:' : 'subreddit:') . $name,
             'sort' => $section,
             'include_over_18' => 'on',
+            't' => $time
         ];
         return 'https://old.reddit.com/search.json?' . http_build_query($query);
     }
@@ -310,6 +356,16 @@ class RedditBridge extends BridgeAbstract
     private function createLink($href, $text)
     {
         return sprintf('<a href="%s">%s</a>', $href, $text);
+    }
+
+    private function createVideoContent(\stdClass $video): string
+    {
+        return <<<HTML
+            <video width="$video->width" height="$video->height" controls>
+                <source src="$video->fallback_url" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        HTML;
     }
 
     public function detectParameters($url)

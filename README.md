@@ -29,7 +29,7 @@ Requires minimum PHP 7.4.
 |![Screenshot #3](/static/screenshot-3.png?raw=true)|![Screenshot #4](/static/screenshot-4.png?raw=true)|
 |![Screenshot #5](/static/screenshot-5.png?raw=true)|![Screenshot #6](/static/screenshot-6.png?raw=true)|
 
-## A subset of bridges (16/447)
+## A subset of bridges (15/447)
 
 * `CssSelectorBridge`: [Scrape out a feed using CSS selectors](https://rss-bridge.org/bridge01/#bridge-CssSelectorBridge)
 * `FeedMergeBridge`: [Combine multiple feeds into one](https://rss-bridge.org/bridge01/#bridge-FeedMergeBridge)
@@ -44,7 +44,6 @@ Requires minimum PHP 7.4.
 * `ThePirateBayBridge:` [Fetches torrents by search/user/category](https://rss-bridge.org/bridge01/#bridge-ThePirateBayBridge)
 * `TikTokBridge`: [Fetches posts by username](https://rss-bridge.org/bridge01/#bridge-TikTokBridge)
 * `TwitchBridge`: [Fetches videos from channel](https://rss-bridge.org/bridge01/#bridge-TwitchBridge)
-* `VkBridge`: [Fetches posts from user/group](https://rss-bridge.org/bridge01/#bridge-VkBridge)
 * `XPathBridge`: [Scrape out a feed using XPath expressions](https://rss-bridge.org/bridge01/#bridge-XPathBridge)
 * `YoutubeBridge`: [Fetches videos by username/channel/playlist/search](https://rss-bridge.org/bridge01/#bridge-YoutubeBridge)
 * `YouTubeCommunityTabBridge`: [Fetches posts from a channel's community tab](https://rss-bridge.org/bridge01/#bridge-YouTubeCommunityTabBridge)
@@ -53,9 +52,10 @@ Requires minimum PHP 7.4.
 
 ### How to install on traditional shared web hosting
 
-RSS-Bridge can basically be unzipped in a web folder. Should be working instantly.
+RSS-Bridge can basically be unzipped into a web folder. Should be working instantly.
 
-Latest zip as of Sep 2023: https://github.com/RSS-Bridge/rss-bridge/archive/refs/tags/2023-09-24.zip
+Latest zip:
+https://github.com/RSS-Bridge/rss-bridge/archive/refs/heads/master.zip (2MB)
 
 ### How to install on Debian 12 (nginx + php-fpm)
 
@@ -66,32 +66,32 @@ timedatectl set-timezone Europe/Oslo
 
 apt install git nginx php8.2-fpm php-mbstring php-simplexml php-curl php-intl
 
-# Create a new user account
+# Create a user account
 useradd --shell /bin/bash --create-home rss-bridge
 
 cd /var/www
 
-# Create folder and change ownership
+# Create folder and change its ownership to rss-bridge
 mkdir rss-bridge && chown rss-bridge:rss-bridge rss-bridge/
 
-# Become user
+# Become rss-bridge
 su rss-bridge
 
-# Fetch latest master
+# Clone master branch into existing folder
 git clone https://github.com/RSS-Bridge/rss-bridge.git rss-bridge/
 cd rss-bridge
 
-# Copy over the default config
+# Copy over the default config (OPTIONAL)
 cp -v config.default.ini.php config.ini.php
 
-# Give full permissions only to owner (rss-bridge)
-chmod 700 -R ./
+# Recursively give full permissions to user/owner
+chmod 700 --recursive ./
 
-# Give read and execute to others (nginx and php-fpm)
+# Give read and execute to others on folder ./static
 chmod o+rx ./ ./static
 
-# Give read to others (nginx)
-chmod o+r -R ./static
+# Recursively give give read to others on folder ./static
+chmod o+r --recursive ./static
 ```
 
 Nginx config:
@@ -101,22 +101,22 @@ Nginx config:
 
 server {
     listen 80;
+
+    # TODO: change to your own server name
     server_name example.com;
+
     access_log /var/log/nginx/rss-bridge.access.log;
     error_log /var/log/nginx/rss-bridge.error.log;
     log_not_found off;
 
-    # Intentionally not setting a root folder here
-
-    # autoindex is off by default but feels good to explicitly turn off
-    autoindex off;
+    # Intentionally not setting a root folder
 
     # Static content only served here
     location /static/ {
         alias /var/www/rss-bridge/static/;
     }
 
-    # Pass off to php-fpm when location is exactly /
+    # Pass off to php-fpm only when location is EXACTLY == /
     location = / {
         root /var/www/rss-bridge/;
         include snippets/fastcgi-php.conf;
@@ -124,12 +124,12 @@ server {
         fastcgi_pass unix:/run/php/rss-bridge.sock;
     }
 
-    # Reduce spam
+    # Reduce log noise
     location = /favicon.ico {
         access_log off;
     }
 
-    # Reduce spam
+    # Reduce log noise
     location = /robots.txt {
         access_log off;
     }
@@ -150,8 +150,11 @@ listen = /run/php/rss-bridge.sock
 listen.owner = www-data
 listen.group = www-data
 
+; Create 10 workers standing by to serve requests
 pm = static
 pm.max_children = 10
+
+; Respawn worker after 500 requests (workaround for memory leaks etc.)
 pm.max_requests = 500
 ```
 
@@ -179,7 +182,7 @@ Install the latest release.
 
 ```shell
 cd /var/www
-composer create-project -v --no-dev rss-bridge/rss-bridge
+composer create-project -v --no-dev --no-scripts rss-bridge/rss-bridge
 ```
 
 ### How to install with Caddy
@@ -192,8 +195,16 @@ Install by downloading the docker image from Docker Hub:
 
 ```bash
 # Create container
-docker create --name=rss-bridge --publish 3000:80 rssbridge/rss-bridge
+docker create --name=rss-bridge --publish 3000:80 --volume $(pwd)/config:/config rssbridge/rss-bridge
+```
 
+You can put custom `config.ini.php` and bridges into `./config`.
+
+**You must restart container for custom changes to take effect.**
+
+See `docker-entrypoint.sh` for details.
+
+```bash
 # Start container
 docker start rss-bridge
 ```
@@ -207,30 +218,29 @@ Browse http://localhost:3000/
 docker build -t rss-bridge .
 
 # Create container
-docker create --name rss-bridge --publish 3000:80 rss-bridge
+docker create --name rss-bridge --publish 3000:80 --volume $(pwd)/config:/config rss-bridge
+```
 
+You can put custom `config.ini.php` and bridges into `./config`.
+
+**You must restart container for custom changes to take effect.**
+
+See `docker-entrypoint.sh` for details.
+
+```bash
 # Start container
 docker start rss-bridge
 ```
 
 Browse http://localhost:3000/
 
-### Install with docker-compose
+### Install with docker-compose (using Docker Hub)
 
-Create a `docker-compose.yml` file locally with with the following content:
-```yml
-version: '2'
-services:
-  rss-bridge:
-    image: rssbridge/rss-bridge:latest
-    volumes:
-      - </local/custom/path>:/config
-    ports:
-      - 3000:80
-    restart: unless-stopped
-```
+You can put custom `config.ini.php` and bridges into `./config`.
 
-Then launch with `docker-compose`:
+**You must restart container for custom changes to take effect.**
+
+See `docker-entrypoint.sh` for details.
 
 ```bash
 docker-compose up
@@ -418,7 +428,16 @@ See `formats/PlaintextFormat.php` for an example.
 
 These commands require that you have installed the dev dependencies in `composer.json`.
 
+Run all tests:
+
     ./vendor/bin/phpunit
+
+Run a single test class:
+
+    ./vendor/bin/phpunit --filter UrlTest
+
+Run linter:
+
     ./vendor/bin/phpcs --standard=phpcs.xml --warning-severity=0 --extensions=php -p ./
 
 https://github.com/squizlabs/PHP_CodeSniffer/wiki
@@ -441,7 +460,6 @@ See [CONTRIBUTORS.md](CONTRIBUTORS.md)
 
 RSS-Bridge uses caching to prevent services from banning your server for repeatedly updating feeds.
 The specific cache duration can be different between bridges.
-Cached files are deleted automatically after 24 hours.
 
 RSS-Bridge allows you to take full control over which bridges are displayed to the user.
 That way you can host your own RSS-Bridge service with your favorite collection of bridges!

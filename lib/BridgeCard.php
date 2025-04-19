@@ -2,10 +2,11 @@
 
 final class BridgeCard
 {
-    public static function render(string $bridgeClassName, Request $request): string
-    {
-        $bridgeFactory = new BridgeFactory();
-
+    public static function render(
+        BridgeFactory $bridgeFactory,
+        string $bridgeClassName,
+        ?string $token
+    ): string {
         $bridge = $bridgeFactory->create($bridgeClassName);
 
         $uri = $bridge->getURI();
@@ -14,10 +15,15 @@ final class BridgeCard
         $description = $bridge->getDescription();
         $contexts = $bridge->getParameters();
 
-        if (Configuration::getConfig('proxy', 'url') && Configuration::getConfig('proxy', 'by_bridge')) {
+        // Checkbox for disabling of proxy (if enabled)
+        if (
+            Configuration::getConfig('proxy', 'url')
+            && Configuration::getConfig('proxy', 'by_bridge')
+        ) {
+            $proxyName = Configuration::getConfig('proxy', 'name') ?: Configuration::getConfig('proxy', 'url');
             $contexts['global']['_noproxy'] = [
-                'name' => 'Disable proxy (' . (Configuration::getConfig('proxy', 'name') ?: Configuration::getConfig('proxy', 'url')) . ')',
-                'type' => 'checkbox'
+                'name' => sprintf('Disable proxy (%s)', $proxyName),
+                'type' => 'checkbox',
             ];
         }
 
@@ -38,6 +44,10 @@ final class BridgeCard
                 data-short-name="$shortName"
             >
 
+            <a style="position: absolute; top: 10px; left: 10px" href="#bridge-{$bridgeClassName}">
+                <h1>#</h1>
+            <a>
+
             <h2><a href="{$uri}">{$name}</a></h2>
             <p class="description">{$description}</p>
 
@@ -46,8 +56,6 @@ final class BridgeCard
 
 
         CARD;
-
-        $token = $request->attribute('token');
 
         if (count($contexts) === 0) {
             // The bridge has zero parameters
@@ -78,7 +86,7 @@ final class BridgeCard
 
         $card .= sprintf('<label class="showless" for="showmore-%s">Show less</label>', $bridgeClassName);
 
-        if ($bridge->getDonationURI() !== '' && Configuration::getConfig('admin', 'donations')) {
+        if (Configuration::getConfig('admin', 'donations') && $bridge->getDonationURI()) {
             $card .= sprintf(
                 '<p class="maintainer">%s ~ <a href="%s">Donate</a></p>',
                 $bridge->getMaintainer(),
@@ -192,7 +200,7 @@ final class BridgeCard
     {
         $required = $entry['required'] ?? null;
         if ($required) {
-            Debug::log('The "required" attribute is not supported for lists.');
+            trigger_error('The required attribute is not supported for lists');
             unset($entry['required']);
         }
 
@@ -235,7 +243,7 @@ final class BridgeCard
     {
         $required = $entry['required'] ?? null;
         if ($required) {
-            Debug::log('The "required" attribute is not supported for checkboxes.');
+            trigger_error('The required attribute is not supported for checkboxes');
             unset($entry['required']);
         }
 

@@ -168,6 +168,12 @@ class Vk2Bridge extends BridgeAbstract
                         $ret .= "* {$text}: {$votes} ({$rate}%)<br />";
                     }
                     $ret .= '</p>';
+                } elseif ($attachment['type'] == 'album') {
+                    $album = $attachment['album'];
+                    $url = "https://vk.com/album{$album['owner_id']}_{$album['id']}";
+                    $title = 'Альбом: ' . $album['title'];
+                    $photo = $this->getImageURLWithLargestWidth($album['thumb']['sizes']);
+                    $ret .= "<p><a href='{$url}'><img src='{$photo}' alt='{$title}'><br>{$title}</a></p>";
                 } elseif (!in_array($attachment['type'], ['video', 'audio', 'doc'])) {
                     $ret .= "<p>Unknown attachment type: {$attachment['type']}</p>";
                 }
@@ -188,7 +194,7 @@ class Vk2Bridge extends BridgeAbstract
     public function collectData()
     {
         if ($this->cache->get($this->rateLimitCacheKey)) {
-            throw new HttpException('429 Too Many Requests', 429);
+            throw new RateLimitException();
         }
 
         $u = $this->getInput('u');
@@ -249,7 +255,7 @@ class Vk2Bridge extends BridgeAbstract
             if (!$ownerId) {
                 $ownerId = $post['owner_id'];
             }
-            $item = new FeedItem();
+            $item = [];
             $content = $this->generateContentFromPost($post);
             if (isset($post['copy_history'])) {
                 if ($this->getInput('hide_reposts')) {
@@ -271,11 +277,11 @@ class Vk2Bridge extends BridgeAbstract
                 $content .= '):</p>';
                 $content .= $this->generateContentFromPost($originalPost);
             }
-            $item->setContent($content);
-            $item->setTimestamp($post['date']);
-            $item->setAuthor($this->ownerNames[$post['from_id']]);
-            $item->setTitle($this->getTitle(strip_tags($content)));
-            $item->setURI($this->getPostURI($post));
+            $item['content'] = $content;
+            $item['timestamp'] = $post['date'];
+            $item['author'] = $this->ownerNames[$post['from_id']];
+            $item['title'] = $this->getTitle(strip_tags($content));
+            $item['uri'] = $this->getPostURI($post);
 
             $this->items[] = $item;
         }
