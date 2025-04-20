@@ -6,6 +6,7 @@ class MangaDexBridge extends BridgeAbstract
     const URI = 'https://mangadex.org/';
     const API_ROOT = 'https://api.mangadex.org/';
     const DESCRIPTION = 'Returns MangaDex items using the API';
+    const CACHE_TIMEOUT = 86400; // 24h
 
     const PARAMETERS = [
         'global' => [
