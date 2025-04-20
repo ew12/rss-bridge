@@ -19,7 +19,7 @@ enabled_bridges[] = Twitch
 enabled_bridges[] = Syfywire
 enabled_bridges[] = TikTok
 enabled_bridges[] = EHentai
-enabled_bridges[] = MangaDex
+enabled_bridges[] = MangaDexBridge
 
 timezone = "Asia/Tokyo"
 
