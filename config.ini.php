@@ -11,14 +11,14 @@
 ;enabled_bridges[] = CssSelectorBridge
 ;enabled_bridges[] = FeedMerge
 ;enabled_bridges[] = *
-enabled_bridges[] = Youtube
-enabled_bridges[] = Mastodon
-enabled_bridges[] = Pornhub
-enabled_bridges[] = Pixiv
-enabled_bridges[] = Twitch
-enabled_bridges[] = Syfywire
-enabled_bridges[] = TikTok
-enabled_bridges[] = EHentai
+enabled_bridges[] = YoutubeBridge
+enabled_bridges[] = MastodonBridge
+enabled_bridges[] = PornhubBridge
+enabled_bridges[] = PixivBridge
+enabled_bridges[] = TwitchBridge
+enabled_bridges[] = SyfywireBridge
+enabled_bridges[] = TikTokBridge
+enabled_bridges[] = EHentaiBridge
 enabled_bridges[] = MangaDexBridge
 
 timezone = "Asia/Tokyo"
