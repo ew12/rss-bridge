@@ -82,7 +82,7 @@ class EHentaiBridge extends BridgeAbstract
             $item = [];
             if ( $result -> find ( 'img', 0 ) !== null ) {
                 $item['enclosures'] = ( $result -> find ( 'img', 0 ) ->hasAttribute ( 'data-src' ) ) ? array ( $result->find('img', 0)->getAttribute('data-src') ) : array ( $result -> find ( 'img', 0 ) -> getAttribute ( 'src' ) );
-                $item [ 'uri' ] = $result -> find ( 'gl3c glname', 0 ) -> find ( 'a', 0 ) -> href;
+                $item [ 'uri' ] = $result -> find ( '.gl3c.glname', 0 ) -> find ( 'a', 0 ) -> href;
                 //$item [ 'uri' ] = $result -> find ( 'a', 1 ) -> href;
                 $item [ 'title' ] = $result -> find ( '.glink', 0 ) -> innertext ();
                 $item [ 'timestamp' ] = $result -> find ( 'div[onclick][!class]', 0 ) -> innertext ();
