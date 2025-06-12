@@ -71,7 +71,7 @@ class PornhubBridge extends BridgeAbstract
             'cookie: accessAgeDisclaimerPH=1'
         ]);
 
-        foreach ($html->find('div.videoUList',0)->find('ul.videos li.videoblock') as $element) {
+        foreach ($html->find('div.latestThumbDesign',0)->find('ul.videos li.videoblock') as $element) {
             $item = [];
 
             $item['author'] = $this->getInput('q');
