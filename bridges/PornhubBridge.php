@@ -72,7 +72,7 @@ class PornhubBridge extends BridgeAbstract
         ]);
 
         if ( $html->find('div.latestThumbDesign', 0) === NULL ) {
-            $this->items[] = array ( 'author'=>$this->getInput ( 'q' ) , 'title'=>'no content' , 'uri'=>$uri , 'content'=>'no content' , 'timestamp'=>'0' );
+            $this->items[] = array ( 'author'=>$this->getInput ( 'q' ) , 'title'=>'no content' , 'uri'=>$uri , 'content'=>'no content' , 'timestamp'=>'666666' );
         }
         else {
 
