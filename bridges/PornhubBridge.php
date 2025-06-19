@@ -71,7 +71,7 @@ class PornhubBridge extends BridgeAbstract
             'cookie: accessAgeDisclaimerPH=1'
         ]);
 
-        if ( $html->find('div.latestThumbDesign') === NULL ) {
+        if ( $html->find('div.latestThumbDesign', 0) === NULL ) {
             $this->items[] = array ( 'author'=>$this->getInput ( 'q' ) , 'title'=>'no content' , 'uri'=>$uri , 'content'=>'no content' , 'timestamp'=>'0' );
         }
         else {
