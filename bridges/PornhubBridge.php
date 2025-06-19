@@ -74,6 +74,7 @@ class PornhubBridge extends BridgeAbstract
         if ( $html->find('div.latestThumbDesign') === NULL ) {
             $this->items[] = array ( 'author'=>$this->getInput ( 'q' ) , 'title'=>'no content' , 'uri'=>$uri , 'content'=>'no content' , 'timestamp'=>'0' );
         }
+        else {
 
         foreach ($html->find('div.latestThumbDesign',0)->find('ul.videos li.videoblock') as $element) {
             $item = [];
@@ -111,6 +112,7 @@ class PornhubBridge extends BridgeAbstract
                 // The thumbnail url did not have a date in it for some unknown reason
             }
             $this->items[] = $item;
+        }
         }
     }
 }
