@@ -5,7 +5,7 @@ class PornhubBridge extends BridgeAbstract
     const MAINTAINER = 'Mitsukarenai';
     const NAME = 'Pornhub';
     const URI = 'https://www.pornhub.com/';
-    const CACHE_TIMEOUT = 3600; // 1h
+    const CACHE_TIMEOUT = 43200; // 12h
     const DESCRIPTION = 'Returns videos from specified user,model,pornstar';
 
     const PARAMETERS = [[
@@ -70,6 +70,10 @@ class PornhubBridge extends BridgeAbstract
         $html = getSimpleHTMLDOM($uri, [
             'cookie: accessAgeDisclaimerPH=1'
         ]);
+
+        if ( $html->find('div.latestThumbDesign',0)->find('ul.videos li.videoblock') === NULL ) {
+            $this->items[] = array ( 'author'=>$this->getInput ( 'q' ) , 'title'=>'no content' , 'uri'=>$uri , 'content'=>'no content' , 'timestamp'=>'0' );
+        }
 
         foreach ($html->find('div.latestThumbDesign',0)->find('ul.videos li.videoblock') as $element) {
             $item = [];
