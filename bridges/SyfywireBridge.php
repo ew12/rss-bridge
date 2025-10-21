@@ -13,7 +13,7 @@ class SyfywireBridge extends BridgeAbstract {
 			if ( $article->hasClass ( 'promo' ) === false || $article->hasClass ( 'teaser--related-posts' ) === false ) {
 				$item['enclosures'] = array ( self::URI.$article->find('img', 0)->getAttribute('src') );
 				$item['uri'] = self::URI.$article->find ( 'a', 0 ) ->href;
-				$item['title'] = $article->find ( 'h2.headline', 0 )->innertext();
+				$item['title'] = ( $article->find ( 'h2.headline', 0 ) !== null ) ? $article->find ( 'h2.headline', 0 )->innertext() : 'N/A';
 				$item['timestamp'] = ( $article->find ( '.date', 0 ) !== null ) ? $article->find( '.date', 0 )->getAttribute ( 'datetime' ) : '';
 				$item['author'] = ( $article->find ( '.author-name', 0 ) !== null ) ? $article->find ( '.author-name', 0 )->innertext() : '';
 				$item['content'] = ( $article->find ( '.author-name', 0 ) !== null ) ? $article->find ( '.description' , 0 )->innertext() : '';
