@@ -16,7 +16,7 @@ class SyfywireBridge extends BridgeAbstract {
 				$item['title'] = ( $article->find ( 'h2.headline', 0 ) !== null ) ? $article->find ( 'h2.headline', 0 )->innertext() : 'N/A';
 				$item['timestamp'] = ( $article->find ( '.date', 0 ) !== null ) ? $article->find( '.date', 0 )->getAttribute ( 'datetime' ) : '';
 				$item['author'] = ( $article->find ( '.author-name', 0 ) !== null ) ? $article->find ( '.author-name', 0 )->innertext() : '';
-				$item['content'] = ( $article->find ( '.author-name', 0 ) !== null ) ? $article->find ( '.description' , 0 )->innertext() : '';
+				$item['content'] = ( $article->find ( '.description', 0 ) !== null ) ? $article->find ( '.description' , 0 )->innertext() : '';
 				$result = array_filter ( $item, function ( $val ) { return $val !== ''; });
 				if ( count ( $result ) == count ( $item ) ) {
 					$this->items[] = $item;
